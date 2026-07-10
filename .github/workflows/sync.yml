@@ -1,0 +1,45 @@
+name: Sync Issues (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      issues-dir:
+        description: "Directory (relative to the repository root) where issue files are written."
+        type: string
+        default: "issues"
+      commit-message:
+        description: "Commit message used when issue files change."
+        type: string
+        default: "chore: sync issues"
+      committer-name:
+        description: "Name used for the sync commit."
+        type: string
+        default: "github-actions[bot]"
+      committer-email:
+        description: "Email used for the sync commit."
+        type: string
+        default: "41898282+github-actions[bot]@users.noreply.github.com"
+    secrets:
+      github-token:
+        description: "Token used to read issues/comments and push commits. Defaults to the caller's GITHUB_TOKEN."
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: issue-sync-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: a24fukuda/issue-to-repository-action@v1
+        with:
+          github-token: ${{ secrets.github-token || github.token }}
+          issues-dir: ${{ inputs.issues-dir }}
+          commit-message: ${{ inputs.commit-message }}
+          committer-name: ${{ inputs.committer-name }}
+          committer-email: ${{ inputs.committer-email }}

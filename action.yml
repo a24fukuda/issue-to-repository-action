@@ -1,0 +1,39 @@
+name: "Issue to Repository"
+description: "Sync GitHub Issues (with comments) into version-controlled Markdown files inside this repository."
+author: "a24fukuda"
+
+branding:
+  icon: "archive"
+  color: "blue"
+
+inputs:
+  github-token:
+    description: "Token used to read issues/comments and push commits. Defaults to the workflow's GITHUB_TOKEN."
+    required: false
+    default: ${{ github.token }}
+  issues-dir:
+    description: "Directory (relative to the repository root) where issue files are written."
+    required: false
+    default: "issues"
+  commit-message:
+    description: "Commit message used when issue files change."
+    required: false
+    default: "chore: sync issues"
+  committer-name:
+    description: "Name used for the sync commit."
+    required: false
+    default: "github-actions[bot]"
+  committer-email:
+    description: "Email used for the sync commit."
+    required: false
+    default: "41898282+github-actions[bot]@users.noreply.github.com"
+
+outputs:
+  changed:
+    description: "Whether any issue files were added, updated, or deleted."
+  commit-sha:
+    description: "SHA of the sync commit, if one was created."
+
+runs:
+  using: "node20"
+  main: "dist/index.js"

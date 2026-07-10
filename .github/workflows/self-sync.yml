@@ -1,0 +1,24 @@
+name: Sync this repo's own issues
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  issues:
+    types: [opened, edited, closed, reopened, deleted]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: issue-sync-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./
+        with:
+          issues-dir: issues
