@@ -5,15 +5,14 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { commitAndPush, getCurrentBranch } from "../src/git";
 
-// commitAndPush shells out to `git` in the current working directory (no
-// explicit cwd is threaded through — that matches how it actually runs in
-// a real Actions job, checked out into the runner's workspace). These
-// tests exercise it against real, disposable git repositories rather than
-// mocking git, since the fetch+rebase retry logic here has been added,
-// removed, and re-added across review rounds with no automated coverage
-// each time — this is the one part of the codebase that's flip-flopped
-// the most, so it's worth verifying against real git rather than trusting
-// prose.
+// commitAndPushはカレントの作業ディレクトリで `git` をシェル実行する
+// （明示的なcwdは渡していない — これは実際のActionsジョブで、ランナーの
+// ワークスペースにチェックアウトされて実行される様子と一致する）。ここでの
+// fetch+rebaseのリトライロジックはレビューの各段階で追加・削除・再追加を
+// 繰り返しながらも毎回自動テストのカバレッジがなかったため、これらの
+// テストはgitをモックせず、使い捨ての実際のgitリポジトリに対して実行する
+// — これはコードベースの中で最も方針が二転三転してきた部分であり、
+// 文章による説明を信頼するのではなく実際のgitに対して検証する価値がある。
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -23,7 +22,7 @@ function isRebaseInProgress(work: string): boolean {
   return existsSync(path.join(work, ".git", "rebase-merge")) || existsSync(path.join(work, ".git", "rebase-apply"));
 }
 
-/** Bare "remote" repo plus a clone of it with an initial commit already pushed. */
+/** ベアの「remote」リポジトリと、初期コミットが既にpushされたそのクローン。 */
 function initRemoteAndClone(root: string): { remote: string; work: string } {
   const remote = path.join(root, "remote.git");
   const work = path.join(root, "work");
@@ -115,7 +114,7 @@ describe("commitAndPush (real git)", () => {
     const sha = await commitAndPush(COMMIT_OPTIONS);
 
     expect(sha).toMatch(/^[0-9a-f]{40}$/);
-    // Both the unrelated writer's commit and this run's commit must be present.
+    // 無関係な書き込み者のコミットと、この実行のコミットの両方が存在する必要がある。
     const log = git(remote, "log", "--oneline", "main");
     expect(log).toContain("unrelated commit");
     expect(log).toContain("sync");

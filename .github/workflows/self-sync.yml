@@ -20,17 +20,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Deliberately calls the packaged action directly (not
-      # sync.yml — the path documented as "Recommended" for
-      # consumers) so this always dogfoods the current commit's
-      # dist/index.js. sync.yml's own step internally pins
-      # `a24fukuda/issue-to-repository-action@v1`, an immutable
-      # released tag, so routing through it here would (a) test
-      # last week's release instead of this commit, and (b) fail
-      # outright before v1 ever exists. This means sync.yml's own
-      # YAML wiring (permissions/secrets/outputs propagation) is
-      # NOT covered by this workflow — verify that by hand after
-      # editing sync.yml.
+      # 意図的に（利用者向けに「推奨」と文書化されている経路である
+      # sync.ymlではなく）パッケージ化されたアクションを直接呼び出し、
+      # 常に現在のコミットのdist/index.jsをドッグフーディングしている。
+      # sync.ymlの自身のステップは内部で不変のリリース済みタグである
+      # `a24fukuda/issue-to-repository-action@v1` を固定して参照して
+      # いるため、ここでそれを経由すると、(a) このコミットではなく
+      # 先週のリリースをテストすることになり、(b) v1が存在しない
+      # うちは完全に失敗してしまう。つまり、sync.yml自体のYAML配線
+      # （permissions/secrets/outputsの伝播）はこのワークフローでは
+      # 検証されて**いない** — sync.ymlを編集した後は手動で確認すること。
       - uses: ./
         with:
           issues-dir: issues

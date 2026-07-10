@@ -1,6 +1,6 @@
 /**
- * Runs `fn` over `items` with at most `limit` calls in flight at once,
- * preserving input order in the returned array.
+ * `items` に対して `fn` を実行する。同時に実行中の呼び出しは最大 `limit`
+ * 件までとし、返される配列では入力の順序を保持する。
  */
 export async function mapWithConcurrency<T, R>(
   items: T[],

@@ -25,10 +25,10 @@ export function renderIssueFile(issue: IssueRecord): string {
     .dump(frontmatter, { lineWidth: -1, noRefs: true, sortKeys: false })
     .trimEnd();
 
-  // Build a list of non-empty blocks and join them with a single blank
-  // line, rather than threading "" separators through a flat array — that
-  // way a blank issue body (common for title-only issues) never leaves
-  // behind an extra blank line before the next block.
+  // フラットな配列に "" のセパレーターを混ぜるのではなく、空でない
+  // ブロックのリストを作り、それらを1つの空行で連結する — こうすることで、
+  // 空のIssue本文（タイトルのみのIssueでよくある）が次のブロックの前に
+  // 余分な空行を残すことがない。
   const blocks = [`---\n${yamlText}\n---`];
 
   const body = issue.body.trim();

@@ -19,11 +19,11 @@ async function readManifestRaw(manifestPath: string): Promise<string | null> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       core.warning(
-        `Could not read ${MANIFEST_FILE_NAME} (${(error as Error).message}) — treating this ` +
-          "run as if no files are owned yet, so no issue files will be deleted this run.",
+        `${MANIFEST_FILE_NAME} を読み込めませんでした（${(error as Error).message}） — ` +
+          "この実行ではまだ何もファイルを所有していないものとして扱うため、今回はIssueファイルを削除しません。",
       );
     }
-    // ENOENT (no manifest yet) is expected on the very first run — stay quiet.
+    // ENOENT（マニフェストがまだない）は初回実行時には想定内なので、警告は出さない。
     return null;
   }
 }
@@ -37,12 +37,12 @@ function parseManifest(raw: string | null): Set<string> {
       return new Set(parsed);
     }
   } catch {
-    // fall through to the warning below
+    // 下の警告処理へフォールスルーする
   }
 
   core.warning(
-    `${MANIFEST_FILE_NAME} exists but isn't a valid list of file names — treating this run ` +
-      "as if no files are owned yet, so no issue files will be deleted this run.",
+    `${MANIFEST_FILE_NAME} は存在しますが、有効なファイル名のリストではありません — ` +
+      "この実行ではまだ何もファイルを所有していないものとして扱うため、今回はIssueファイルを削除しません。",
   );
   return new Set();
 }
@@ -56,15 +56,15 @@ function setsEqual(a: Set<string>, b: Set<string>): boolean {
 }
 
 /**
- * Regenerates the issues directory from scratch: writes one file per open
- * issue record and removes previously-synced files that no longer have a
- * matching issue (e.g. the issue was deleted on GitHub).
+ * issuesディレクトリをゼロから再生成する: 各Issueレコードにつき1ファイルを
+ * 書き込み、対応するIssueがなくなった過去に同期済みのファイル（例えば
+ * GitHub上でIssueが削除された場合）を削除する。
  *
- * Deletion is scoped to files this function wrote on a prior run (tracked
- * in a manifest alongside the issue files), not just to anything matching
- * the issue-file naming pattern — so a foreign file that happens to be
- * named like an issue (e.g. issues-dir pointed at a shared directory)
- * isn't silently deleted.
+ * 削除の対象は、Issueファイルの命名パターンに一致するものすべてではなく、
+ * この関数が過去の実行で書き込んだファイル（Issueファイルと一緒に
+ * マニフェストで追跡されている）に限定される — そのため、Issueのような
+ * 名前を偶然持つ無関係なファイル（例えば issues-dir が共有ディレクトリを
+ * 指している場合）が黙って削除されることはない。
  */
 export async function syncIssueFiles(
   dir: string,
@@ -115,18 +115,19 @@ export async function syncIssueFiles(
     const sample = skippedDeletion.slice(0, SKIPPED_DELETION_LOG_LIMIT).join(", ");
     const more = skippedDeletion.length - SKIPPED_DELETION_LOG_LIMIT;
     core.info(
-      `Not deleting ${skippedDeletion.length} file(s) with no matching issue, since they ` +
-        `aren't recorded in ${MANIFEST_FILE_NAME} as owned by this action: ${sample}` +
-        (more > 0 ? `, and ${more} more` : ""),
+      `対応するIssueがないファイルが${skippedDeletion.length}件ありますが、` +
+        `${MANIFEST_FILE_NAME} にこのアクションが所有しているファイルとして記録されていないため削除しません: ${sample}` +
+        (more > 0 ? `、他${more}件` : ""),
     );
   }
 
-  // Only rewrite the manifest — and only report it as written — when the
-  // set of owned files actually changes, so a run with no issue changes
-  // (the common case) doesn't produce a write that syncIssueFiles' caller
-  // has no way to know it needs to commit. Compared by parsed content, not
-  // raw bytes, so formatting (e.g. line-ending normalization on checkout)
-  // can't make this spuriously differ.
+  // 所有ファイルの集合が実際に変化したときにのみマニフェストを書き換え、
+  // 書き込みとして報告する。そうすることで、Issueに変更がない実行
+  // （よくあるケース）では、syncIssueFilesの呼び出し元がコミットが
+  // 必要かどうか知る手段のない書き込みが発生しないようにする。生バイトでは
+  // なくパース済みの内容で比較しているため、フォーマットの違い
+  // （チェックアウト時の改行コード正規化など）によって見かけ上の差分が
+  // 発生することはない。
   const desiredFileNames = new Set(desired.keys());
   if (!setsEqual(previouslyOwned, desiredFileNames)) {
     const manifestContent = `${JSON.stringify([...desiredFileNames].sort(), null, 2)}\n`;

@@ -13,16 +13,16 @@ function logAndRetry(
   retryCount: number,
 ): boolean {
   core.warning(
-    `${kind} hit for ${options.method} ${options.url}; retrying after ${retryAfter}s (attempt ${retryCount + 1}).`,
+    `${kind}に達しました: ${options.method} ${options.url}。${retryAfter}秒後にリトライします（${retryCount + 1}回目の試行）。`,
   );
   return retryCount < MAX_RATE_LIMIT_RETRIES;
 }
 
 const throttle: ThrottlingOptions = {
   onRateLimit: (retryAfter, options, _octokit, retryCount) =>
-    logAndRetry("Rate limit", retryAfter, options, retryCount),
+    logAndRetry("レート制限", retryAfter, options, retryCount),
   onSecondaryRateLimit: (retryAfter, options, _octokit, retryCount) =>
-    logAndRetry("Secondary rate limit", retryAfter, options, retryCount),
+    logAndRetry("セカンダリレート制限", retryAfter, options, retryCount),
 };
 
 export function createOctokit(token: string): ReturnType<typeof github.getOctokit> {

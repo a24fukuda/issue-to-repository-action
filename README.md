@@ -1,39 +1,39 @@
 # issue-to-repository-action
 
-Syncs GitHub Issues (with their comment history) into version-controlled
-Markdown files inside your repository, so the history of *why* a change was
-made survives independently of GitHub.
+GitHub Issues（コメント履歴を含む）を、バージョン管理されたMarkdownファイルとして
+リポジトリ内に同期します。これにより、変更が「なぜ」行われたかという履歴が
+GitHubから独立して残ります。
 
-## Design
+## 設計方針
 
-- **Batch, not real-time.** On every run, all issues are re-fetched from the
-  API and the `issues/` directory is fully regenerated in a single commit.
-  There's no per-event incremental commit, so there's no need to reconcile
-  multiple *simultaneous runs of this action* writing to the same branch —
-  a `concurrency` group (in `sync.yml`/`self-sync.yml`) serializes those. A
-  concurrency group can't stop an unrelated commit (a merged PR, another
-  bot) landing on the same branch while this run is mid-fetch, though, so
-  the sync commit still does one fetch-and-rebase retry on a rejected push
-  before giving up. If a run still fails outright (a genuine content
-  conflict, or a caller using the direct-action path with no concurrency
-  group of its own), nothing retries it automatically — `issues/` stays
-  stale until the next scheduled or event-triggered run.
-- **One file per issue**, named `issues/<number>.md`.
-- **Open/closed is a frontmatter field** (`state: open` / `state: closed`),
-  not a directory split — closing an issue never renames/moves its file, so
-  history stays attached to one path.
-- **Comments are appended** under a `## Comments` section, since they're
-  part of the recorded history too.
-- **GitHub-specific metadata** (labels, assignees, milestone, author, URL,
-  timestamps) is captured in frontmatter so nothing is lost if you ever
-  migrate away from GitHub.
+- **リアルタイムではなくバッチ処理。** 実行のたびに全Issueが API から再取得され、
+  `issues/` ディレクトリが1つのコミットで完全に再生成されます。イベントごとの
+  差分コミットは行わないため、この*アクションの複数の実行が同時に*同じブランチへ
+  書き込む状況を調整する必要はありません — `concurrency` グループ
+  （`sync.yml`/`self-sync.yml` 内）がそれらを直列化します。ただし
+  `concurrency` グループは、このアクションの実行中に無関係なコミット
+  （マージされたPRや他のボット）が同じブランチに乗ることまでは防げないため、
+  同期コミットはプッシュが拒否された場合に1回だけ fetch-and-rebase の
+  リトライを行ってから諦めます。それでも実行が失敗した場合（実際のコンテンツ
+  競合、または独自の `concurrency` グループを持たない direct-action 経由の
+  呼び出し元の場合）、自動でリトライされることはなく、次のスケジュール実行
+  またはイベントトリガーの実行まで `issues/` は古いままになります。
+- **Issueごとに1ファイル**、`issues/<number>.md` という名前で保存されます。
+- **open/closed はフロントマターのフィールド**（`state: open` / `state: closed`）
+  であり、ディレクトリの分割ではありません — Issueをクローズしてもファイルの
+  リネームや移動は発生しないため、履歴は1つのパスに紐づいたままになります。
+- **コメントは `## Comments` セクションの下に追記**されます。コメントも記録
+  すべき履歴の一部だからです。
+- **GitHub固有のメタデータ**（ラベル、担当者、マイルストーン、作成者、URL、
+  タイムスタンプ）はフロントマターに記録されるため、将来GitHubから移行しても
+  何も失われません。
 
-## Usage
+## 使い方
 
-### Recommended: reusable workflow
+### 推奨: 再利用可能なワークフロー
 
-Add this to the repository whose issues you want synced. Pin `@v1` (or a
-specific `@vX.Y.Z` release) rather than `@main` for stability.
+Issueを同期したいリポジトリに以下を追加してください。安定性のため `@main` では
+なく `@v1`（または特定の `@vX.Y.Z` リリース）を指定することをお勧めします。
 
 ```yaml
 # .github/workflows/issue-sync.yml
@@ -52,14 +52,14 @@ jobs:
     secrets: inherit
 ```
 
-The reusable workflow checks out your repository, runs the sync action, and
-pushes a commit when `issues/` changes. It also applies its own
-`concurrency` group, so overlapping issue events and the daily schedule
-never race each other.
+この再利用可能なワークフローは、リポジトリをチェックアウトし、同期アクションを
+実行し、`issues/` に変更があればコミットをプッシュします。また独自の
+`concurrency` グループを適用するため、Issueイベントと日次スケジュールが
+重なっても競合しません。
 
-### Alternative: call the action directly
+### 代替案: アクションを直接呼び出す
 
-Useful if you want to fold the sync step into a larger workflow.
+同期処理をより大きなワークフローに組み込みたい場合に便利です。
 
 ```yaml
 permissions:
@@ -73,21 +73,21 @@ steps:
       issues-dir: issues
 ```
 
-This path has no built-in concurrency protection (a JS action can't declare a
-`concurrency:` block itself) — add one to your own workflow if it can be
-triggered by overlapping events.
+この方法には組み込みの並行実行保護がありません（JSアクション自体は
+`concurrency:` ブロックを宣言できないため）。重複するイベントで
+トリガーされる可能性がある場合は、自分のワークフロー側に追加してください。
 
-## Inputs
+## 入力
 
-| Input             | Default                                                | Description                                       |
-| ------------------|---------------------------------------------------------|-----------------------------------------------------|
-| `github-token`    | `${{ github.token }}`                                  | Token used to read issues/comments and push commits |
-| `issues-dir`      | `issues`                                                | Directory to write issue files into                 |
-| `commit-message`  | `chore: sync issues`                                    | Commit message when files change                    |
-| `committer-name`  | `github-actions[bot]`                                   | Commit author name                                   |
-| `committer-email` | `41898282+github-actions[bot]@users.noreply.github.com` | Commit author email                                  |
+| Input             | デフォルト                                              | 説明                                       |
+| ------------------|---------------------------------------------------------|--------------------------------------------|
+| `github-token`    | `${{ github.token }}`                                  | Issue/コメントの読み取りとコミットのプッシュに使うトークン |
+| `issues-dir`      | `issues`                                                | Issueファイルの書き込み先ディレクトリ         |
+| `commit-message`  | `chore: sync issues`                                    | ファイルに変更があった場合のコミットメッセージ |
+| `committer-name`  | `github-actions[bot]`                                   | コミット作成者名                             |
+| `committer-email` | `41898282+github-actions[bot]@users.noreply.github.com` | コミット作成者のメールアドレス                |
 
-## File format
+## ファイル形式
 
 ```markdown
 ---
@@ -116,19 +116,20 @@ Steps to reproduce...
 Same here.
 ```
 
-Issues deleted upstream (or removed by GitHub) have their file deleted on
-the next sync, since the directory is always regenerated from the current
-set of issues. Deletion is scoped to files this action wrote on a prior
-run — tracked in `issues/.manifest.json`, which is committed alongside the
-issue files — so a pre-existing file that happens to be named like an
-issue (e.g. `issues-dir` pointed at a directory you don't fully control)
-is never touched.
+GitHub上流で削除された（またはGitHubにより削除された）Issueは、次回の同期時に
+ファイルも削除されます。ディレクトリは常に現在のIssue集合から再生成される
+ためです。削除の対象はこのアクションが以前の実行で書き込んだファイルに
+限定されます — `issues/.manifest.json`（Issueファイルと一緒にコミットされます）
+で追跡されているため、Issueのような名前を偶然持つ既存ファイル（例えば
+`issues-dir` が完全に制御できないディレクトリを指している場合など）が
+誤って削除されることはありません。
 
-## Releasing
+## リリース手順
 
-Tag a commit with both an immutable version (`vX.Y.Z`) and a moving major
-tag (`v1`) pointing at the same commit, since `.github/workflows/sync.yml`
-references `a24fukuda/issue-to-repository-action@v1` internally:
+`.github/workflows/sync.yml` は内部で
+`a24fukuda/issue-to-repository-action@v1` を参照しているため、コミットには
+不変のバージョンタグ（`vX.Y.Z`）と、同じコミットを指す可変のメジャータグ
+（`v1`）の両方を付けてください:
 
 ```sh
 git tag v1.0.0
@@ -137,38 +138,40 @@ git push origin v1.0.0
 git push -f origin v1
 ```
 
-`dist/index.js` is committed (it's what `runs.main` in `action.yml`
-executes) and CI (`.github/workflows/ci.yml`) fails a PR if it's out of
-date with `src/`. Run `bun run build` after any source change and commit
-the result.
+`dist/index.js` はコミットされており（`action.yml` の `runs.main` が実行する
+ファイルです）、CI（`.github/workflows/ci.yml`）は `src/` と内容が一致しない
+場合PRを失敗させます。ソースを変更したら `bun run build` を実行し、結果を
+コミットしてください。
 
-`.github/workflows/self-sync.yml` dogfoods `action.yml` directly (`uses:
-./`) on every push, so `src/` changes get exercised continuously. It does
-**not** exercise `.github/workflows/sync.yml` — that reusable workflow's
-own step pins the released `@v1` tag internally, so routing self-sync
-through it would test the last release instead of the current commit.
-Changes to `sync.yml` itself (permissions, secrets/outputs wiring) aren't
-covered by any automated workflow in this repo — review them by hand, and
-consider a manual end-to-end check against a real consumer repo after
-cutting a release that changes it.
+`.github/workflows/self-sync.yml` は `action.yml` を直接（`uses: ./`）使って
+プッシュのたびにドッグフーディングを行うため、`src/` の変更は継続的に
+検証されます。ただしこれは `.github/workflows/sync.yml` を検証するもの
+**ではありません** — その再利用可能なワークフローは内部でリリース済みの
+`@v1` タグを固定して参照しているため、self-sync経由でそれをテストすると
+現在のコミットではなく最新リリースをテストすることになってしまいます。
+`sync.yml` 自体への変更（権限、secrets/outputs の配線）はこのリポジトリの
+どの自動化ワークフローでもカバーされていないため、手動でレビューし、
+それを変更するリリースを切った後は実際のconsumerリポジトリに対する
+手動のエンドツーエンド確認を検討してください。
 
-## Development
+## 開発
 
-The toolchain (dependency install, type checking, tests, bundling) runs on
-[Bun](https://bun.sh). The action itself still executes on Node.js at
-runtime (`runs.using: node20` in `action.yml`) — `bun build` targets
-Node (`--target=node --format=cjs`), so `dist/index.js` is plain
-Node-compatible CommonJS, not a Bun-only bundle.
+ツールチェイン（依存関係のインストール、型チェック、テスト、バンドル）は
+[Bun](https://bun.sh) 上で動作します。アクション自体は実行時には引き続き
+Node.js上で実行されます（`action.yml` の `runs.using: node20`）—
+`bun build` はNodeをターゲットにする（`--target=node --format=cjs`）ため、
+`dist/index.js` はBun専用バンドルではなく、通常のNode互換CommonJSです。
 
 ```sh
 bun install
 bun run typecheck
 bun test
-bun run build   # regenerates dist/index.js
+bun run build   # dist/index.js を再生成
 ```
 
-CI pins an exact `bun-version` (`.github/workflows/ci.yml`) rather than
-`latest`, since `bun build`'s minified output isn't guaranteed byte-stable
-across Bun releases and the CI "dist/ is up to date" check compares
-`dist/index.js` byte-for-byte. If you bump the pinned version, rebuild and
-recommit `dist/index.js` in the same change.
+`bun build` の最小化された出力はBunのリリース間でバイト単位の安定性が
+保証されておらず、CIの「dist/ が最新か」チェックは `dist/index.js` を
+バイト単位で比較するため、CIは `latest` ではなく固定した `bun-version`
+（`.github/workflows/ci.yml`）を使用しています。固定バージョンを
+上げる場合は、同じ変更内で `dist/index.js` を再ビルドして
+コミットし直してください。

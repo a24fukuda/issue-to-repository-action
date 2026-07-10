@@ -7,12 +7,13 @@ import type { RunDependencies } from "../src/run";
 import { run } from "../src/run";
 import type { IssueRecord } from "../src/types";
 
-// @actions/core reads inputs from INPUT_<NAME> env vars, reads the repo
-// from GITHUB_REPOSITORY, and writes outputs by appending to the file at
-// GITHUB_OUTPUT (always set by the real Actions runner) — set these
-// directly rather than mocking the modules, so this test doesn't depend on
-// module-mock semantics (which apply process-wide in Bun's test runner and
-// would otherwise leak into other test files).
+// @actions/core は INPUT_<NAME> 環境変数から入力を読み取り、
+// GITHUB_REPOSITORY からリポジトリを読み取り、GITHUB_OUTPUT
+// （実際のActionsランナーでは常に設定されている）のファイルへの追記で
+// 出力を書き込む — モジュールをモックするのではなくこれらを直接設定する
+// ことで、このテストがモジュールモックのセマンティクス（Bunのテスト
+// ランナーではプロセス全体に適用され、他の無関係なテストファイルにも
+// 漏れ出してしまう）に依存しないようにしている。
 const ENV_KEYS = ["INPUT_GITHUB-TOKEN", "GITHUB_REPOSITORY", "GITHUB_OUTPUT"];
 const originalEnv: Record<string, string | undefined> = {};
 let outputFile: string;
@@ -32,12 +33,12 @@ afterEach(() => {
     if (originalEnv[key] === undefined) delete process.env[key];
     else process.env[key] = originalEnv[key];
   }
-  // @actions/core's setFailed() sets process.exitCode = 1 as a real side
-  // effect on the actual process — several tests below deliberately
-  // trigger it, so reset it to 0 or the whole `bun test` run exits
-  // non-zero even though every assertion passed. (Assigning `undefined`
-  // does NOT clear a previously-set process.exitCode — it must be a
-  // number.)
+  // @actions/core の setFailed() は実際のプロセスに対する本物の副作用
+  // として process.exitCode = 1 を設定する — 以下のいくつかのテストは
+  // 意図的にこれをトリガーするため、リセットして0に戻さないと、すべての
+  // アサーションが通過していても `bun test` の実行全体が非ゼロで
+  // 終了してしまう。（`undefined` を代入しても、既に設定された
+  // process.exitCode はクリアされない — 数値を設定する必要がある。）
   process.exitCode = 0;
 });
 
@@ -54,8 +55,9 @@ function makeDeps(overrides: Partial<RunDependencies> = {}): RunDependencies {
 }
 
 /**
- * Parses the GITHUB_OUTPUT file's `key<<delimiter\nvalue\ndelimiter` format
- * (what @actions/core's setOutput actually writes) into a plain object.
+ * GITHUB_OUTPUTファイルの `key<<delimiter\nvalue\ndelimiter` 形式
+ * （@actions/core の setOutput が実際に書き込む形式）をプレーンな
+ * オブジェクトにパースする。
  */
 function readOutputs(): Record<string, string> {
   const lines = readFileSync(outputFile, "utf8").split("\n");
@@ -152,9 +154,10 @@ describe("run output contract", () => {
   });
 
   it("sets changed=false (not left unset) when commitAndPush throws", async () => {
-    // Regression test: the catch block used to leave `changed` completely
-    // unset on any error, so a caller reading the action's output saw an
-    // empty string rather than an explicit false on failure.
+    // 回帰テスト: 以前のcatchブロックは、どんなエラーが起きても
+    // `changed` を完全に未設定のままにしていたため、このアクションの
+    // 出力を読む呼び出し元は、失敗時に明示的なfalseではなく空文字列を
+    // 見ることになっていた。
     await run(
       makeDeps({
         syncIssueFiles: async () => ({ written: ["1.md"], deleted: [] }),
@@ -180,11 +183,11 @@ describe("run output contract", () => {
   });
 
   it("does not downgrade changed=true to false if a later output write fails", async () => {
-    // Regression test: setOutput appends to GITHUB_OUTPUT, and the catch
-    // block used to unconditionally set changed=false on any error. If the
-    // commit-sha setOutput call failed *after* changed=true had already
-    // been written (a real push landed), that would silently downgrade an
-    // accurate "true" to an inaccurate "false".
+    // 回帰テスト: setOutputはGITHUB_OUTPUTに追記する方式であり、以前の
+    // catchブロックはどんなエラーでも無条件に changed=false を
+    // 設定していた。changed=true が既に書き込まれた*後*（実際にpushが
+    // 成功していた）に commit-sha の setOutput 呼び出しが失敗した場合、
+    // 正確な "true" が黙って不正確な "false" に格下げされてしまっていた。
     await run(
       makeDeps({
         syncIssueFiles: async () => ({ written: ["1.md"], deleted: [] }),
@@ -199,8 +202,8 @@ describe("run output contract", () => {
     );
 
     expect(readOutputs().changed).toBe("true");
-    // setFailed still runs — the output-channel failure is itself a real
-    // problem worth surfacing, even though `changed` stays accurate.
+    // setFailedはそれでも実行される — `changed` は正確な値のままだが、
+    // 出力チャネル自体の失敗も報告に値する実際の問題である。
     expect(process.exitCode).toBe(1);
   });
 });
