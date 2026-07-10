@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
+
+      - name: Verify dist/ is up to date
+        run: |
+          if [ -n "$(git status --porcelain dist)" ]; then
+            echo "dist/ is out of date. Run 'bun run build' and commit the result." >&2
+            git diff dist
+            exit 1
+          fi
+
+      # action.yml declares `runs.using: node20`, but Bun's bundler doesn't
+      # down-level syntax to a specific Node version the way esbuild's old
+      # --target=node20 did. `node --check` parses (without running)
+      # dist/index.js under real Node 20, so an incompatible syntax feature
+      # fails CI directly rather than only surfacing on a live run.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Verify dist/index.js parses under Node 20
+        run: node --check dist/index.js

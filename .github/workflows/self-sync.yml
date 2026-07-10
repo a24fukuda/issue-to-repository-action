@@ -1,0 +1,36 @@
+name: Sync this repo's own issues
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  issues:
+    types: [opened, edited, closed, reopened, deleted]
+
+permissions:
+  contents: write
+  issues: read
+
+concurrency:
+  group: issue-sync-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Deliberately calls the packaged action directly (not
+      # sync.yml — the path documented as "Recommended" for
+      # consumers) so this always dogfoods the current commit's
+      # dist/index.js. sync.yml's own step internally pins
+      # `a24fukuda/issue-to-repository-action@v1`, an immutable
+      # released tag, so routing through it here would (a) test
+      # last week's release instead of this commit, and (b) fail
+      # outright before v1 ever exists. This means sync.yml's own
+      # YAML wiring (permissions/secrets/outputs propagation) is
+      # NOT covered by this workflow — verify that by hand after
+      # editing sync.yml.
+      - uses: ./
+        with:
+          issues-dir: issues
