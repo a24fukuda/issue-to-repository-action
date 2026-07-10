@@ -41,6 +41,7 @@ jobs:
     uses: a24fukuda/issue-to-repository-action/.github/workflows/sync.yml@v1
     permissions:
       contents: write
+      issues: read
     secrets: inherit
 ```
 
@@ -56,6 +57,7 @@ Useful if you want to fold the sync step into a larger workflow.
 ```yaml
 permissions:
   contents: write
+  issues: read
 
 steps:
   - uses: actions/checkout@v4
@@ -63,6 +65,10 @@ steps:
     with:
       issues-dir: issues
 ```
+
+This path has no built-in concurrency protection (a JS action can't declare a
+`concurrency:` block itself) — add one to your own workflow if it can be
+triggered by overlapping events.
 
 ## Inputs
 
@@ -105,7 +111,11 @@ Same here.
 
 Issues deleted upstream (or removed by GitHub) have their file deleted on
 the next sync, since the directory is always regenerated from the current
-set of issues.
+set of issues. Deletion is scoped to files this action wrote on a prior
+run — tracked in `issues/.manifest.json`, which is committed alongside the
+issue files — so a pre-existing file that happens to be named like an
+issue (e.g. `issues-dir` pointed at a directory you don't fully control)
+is never touched.
 
 ## Releasing
 
@@ -139,3 +149,9 @@ bun run typecheck
 bun test
 bun run build   # regenerates dist/index.js
 ```
+
+CI pins an exact `bun-version` (`.github/workflows/ci.yml`) rather than
+`latest`, since `bun build`'s minified output isn't guaranteed byte-stable
+across Bun releases and the CI "dist/ is up to date" check compares
+`dist/index.js` byte-for-byte. If you bump the pinned version, rebuild and
+recommit `dist/index.js` in the same change.

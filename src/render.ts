@@ -25,15 +25,24 @@ export function renderIssueFile(issue: IssueRecord): string {
     .dump(frontmatter, { lineWidth: -1, noRefs: true, sortKeys: false })
     .trimEnd();
 
-  const sections = [`---\n${yamlText}\n---`, "", issue.body.trim()];
+  // Build a list of non-empty blocks and join them with a single blank
+  // line, rather than threading "" separators through a flat array — that
+  // way a blank issue body (common for title-only issues) never leaves
+  // behind an extra blank line before the next block.
+  const blocks = [`---\n${yamlText}\n---`];
+
+  const body = issue.body.trim();
+  if (body) blocks.push(body);
 
   if (issue.comments.length > 0) {
-    sections.push("", "## Comments");
-    for (const comment of issue.comments) {
+    const commentBlocks = issue.comments.map((comment) => {
       const author = comment.authorLogin ? `@${comment.authorLogin}` : "unknown";
-      sections.push("", `### ${author} — ${comment.createdAt}`, "", comment.body.trim());
-    }
+      const header = `### ${author} — ${comment.createdAt}`;
+      const commentBody = comment.body.trim();
+      return commentBody ? `${header}\n\n${commentBody}` : header;
+    });
+    blocks.push(["## Comments", ...commentBlocks].join("\n\n"));
   }
 
-  return `${sections.join("\n").trimEnd()}\n`;
+  return `${blocks.join("\n\n")}\n`;
 }

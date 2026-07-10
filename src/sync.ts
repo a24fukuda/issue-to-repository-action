@@ -4,16 +4,37 @@ import { issueFileName, renderIssueFile } from "./render";
 import type { IssueRecord } from "./types";
 
 const ISSUE_FILE_PATTERN = /^\d+\.md$/;
+const MANIFEST_FILE_NAME = ".manifest.json";
 
 export interface SyncResult {
   written: string[];
   deleted: string[];
 }
 
+async function readManifest(manifestPath: string): Promise<Set<string>> {
+  try {
+    const raw = await readFile(manifestPath, "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
+      return new Set(parsed);
+    }
+  } catch {
+    // No manifest yet (first run) or it's unreadable/corrupt — treat as
+    // "we don't know what we own", so nothing gets deleted this run.
+  }
+  return new Set();
+}
+
 /**
  * Regenerates the issues directory from scratch: writes one file per open
- * issue record and removes any previously-synced file that no longer has a
+ * issue record and removes previously-synced files that no longer have a
  * matching issue (e.g. the issue was deleted on GitHub).
+ *
+ * Deletion is scoped to files this function wrote on a prior run (tracked
+ * in a manifest alongside the issue files), not just to anything matching
+ * the issue-file naming pattern — so a foreign file that happens to be
+ * named like an issue (e.g. issues-dir pointed at a shared directory)
+ * isn't silently deleted.
  */
 export async function syncIssueFiles(
   dir: string,
@@ -25,6 +46,9 @@ export async function syncIssueFiles(
   for (const issue of issues) {
     desired.set(issueFileName(issue), renderIssueFile(issue));
   }
+
+  const manifestPath = path.join(dir, MANIFEST_FILE_NAME);
+  const previouslyOwned = await readManifest(manifestPath);
 
   const entries = await readdir(dir, { withFileTypes: true });
   const existingFiles = new Set(
@@ -48,11 +72,13 @@ export async function syncIssueFiles(
 
   const deleted: string[] = [];
   for (const fileName of existingFiles) {
-    if (!desired.has(fileName)) {
+    if (!desired.has(fileName) && previouslyOwned.has(fileName)) {
       await rm(path.join(dir, fileName));
       deleted.push(fileName);
     }
   }
+
+  await writeFile(manifestPath, `${JSON.stringify([...desired.keys()].sort(), null, 2)}\n`, "utf8");
 
   return { written, deleted };
 }

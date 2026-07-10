@@ -23,9 +23,17 @@ on:
       github-token:
         description: "Token used to read issues/comments and push commits. Defaults to the caller's GITHUB_TOKEN."
         required: false
+    outputs:
+      changed:
+        description: "Whether any issue files were added, updated, or deleted."
+        value: ${{ jobs.sync.outputs.changed }}
+      commit-sha:
+        description: "SHA of the sync commit, if one was created."
+        value: ${{ jobs.sync.outputs.commit-sha }}
 
 permissions:
   contents: write
+  issues: read
 
 jobs:
   sync:
@@ -33,10 +41,16 @@ jobs:
     concurrency:
       group: issue-sync-${{ github.repository }}
       cancel-in-progress: false
+    outputs:
+      changed: ${{ steps.sync-issues.outputs.changed }}
+      commit-sha: ${{ steps.sync-issues.outputs.commit-sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.github-token || github.token }}
 
-      - uses: a24fukuda/issue-to-repository-action@v1
+      - id: sync-issues
+        uses: a24fukuda/issue-to-repository-action@v1
         with:
           github-token: ${{ secrets.github-token || github.token }}
           issues-dir: ${{ inputs.issues-dir }}

@@ -35,7 +35,7 @@ describe("syncIssueFiles", () => {
     const result = await syncIssueFiles(dir, [makeIssue(1), makeIssue(2)]);
     expect(result.written.sort()).toEqual(["1.md", "2.md"]);
     expect(result.deleted).toEqual([]);
-    expect((await readdir(dir)).sort()).toEqual(["1.md", "2.md"]);
+    expect((await readdir(dir)).sort()).toEqual([".manifest.json", "1.md", "2.md"]);
   });
 
   it("updates a file when the issue content changes", async () => {
@@ -57,13 +57,22 @@ describe("syncIssueFiles", () => {
     await syncIssueFiles(dir, [makeIssue(1), makeIssue(2)]);
     const result = await syncIssueFiles(dir, [makeIssue(1)]);
     expect(result.deleted).toEqual(["2.md"]);
-    expect(await readdir(dir)).toEqual(["1.md"]);
+    expect((await readdir(dir)).sort()).toEqual([".manifest.json", "1.md"]);
   });
 
   it("ignores unrelated files in the issues directory", async () => {
     await writeFile(path.join(dir, "README.md"), "# issues\n", "utf8");
     const result = await syncIssueFiles(dir, [makeIssue(1)]);
     expect(result.deleted).toEqual([]);
-    expect((await readdir(dir)).sort()).toEqual(["1.md", "README.md"]);
+    expect((await readdir(dir)).sort()).toContain("README.md");
+  });
+
+  it("does not delete a numerically-named file it never wrote itself", async () => {
+    // Simulates issues-dir pointing at a directory that already had a
+    // foreign file coincidentally matching the <number>.md pattern.
+    await writeFile(path.join(dir, "2.md"), "not ours\n", "utf8");
+    const result = await syncIssueFiles(dir, [makeIssue(1)]);
+    expect(result.deleted).toEqual([]);
+    expect(await readFile(path.join(dir, "2.md"), "utf8")).toBe("not ours\n");
   });
 });

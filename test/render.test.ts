@@ -68,4 +68,28 @@ describe("renderIssueFile", () => {
     const issue = makeIssue();
     expect(renderIssueFile(issue)).toBe(renderIssueFile(issue));
   });
+
+  it("emits exactly one blank line before Comments when the body is empty", () => {
+    const output = renderIssueFile(
+      makeIssue({
+        body: "",
+        comments: [{ authorLogin: "carol", createdAt: "2026-01-03T00:00:00Z", body: "Same here." }],
+      }),
+    );
+    expect(output).toContain("---\n\n## Comments");
+    expect(output).not.toContain("\n\n\n");
+  });
+
+  it("never emits more than one consecutive blank line", () => {
+    const output = renderIssueFile(
+      makeIssue({
+        body: "line one\n\nline two",
+        comments: [
+          { authorLogin: "carol", createdAt: "2026-01-03T00:00:00Z", body: "Same here." },
+          { authorLogin: "dave", createdAt: "2026-01-04T00:00:00Z", body: "" },
+        ],
+      }),
+    );
+    expect(output).not.toContain("\n\n\n");
+  });
 });

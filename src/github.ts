@@ -1,5 +1,6 @@
 import * as github from "@actions/github";
 import type { Endpoints } from "@octokit/types";
+import { mapWithConcurrency } from "./concurrency";
 import type { IssueComment, IssueRecord } from "./types";
 
 type Octokit = ReturnType<typeof github.getOctokit>;
@@ -8,6 +9,11 @@ type Label = Issue["labels"][number];
 type Assignee = NonNullable<Issue["assignees"]>[number];
 type Comment =
   Endpoints["GET /repos/{owner}/{repo}/issues/{issue_number}/comments"]["response"]["data"][number];
+
+// Bounds how many issues' comment threads are fetched concurrently. The
+// throttling plugin on the Octokit instance handles backing off when this
+// still trips GitHub's rate limits.
+const COMMENT_FETCH_CONCURRENCY = 8;
 
 export async function fetchIssues(
   octokit: Octokit,
@@ -21,14 +27,13 @@ export async function fetchIssues(
     per_page: 100,
   });
 
-  const records: IssueRecord[] = [];
-  for (const issue of issues) {
-    // The "list issues" endpoint also returns pull requests; skip those.
-    if (issue.pull_request) continue;
+  // The "list issues" endpoint also returns pull requests; skip those.
+  const nonPrIssues = issues.filter((issue: Issue) => !issue.pull_request);
 
+  return mapWithConcurrency(nonPrIssues, COMMENT_FETCH_CONCURRENCY, async (issue: Issue) => {
     const comments = await fetchComments(octokit, owner, repo, issue.number);
 
-    records.push({
+    return {
       number: issue.number,
       title: issue.title,
       url: issue.html_url,
@@ -46,10 +51,8 @@ export async function fetchIssues(
       closedAt: issue.closed_at,
       body: issue.body ?? "",
       comments,
-    });
-  }
-
-  return records;
+    };
+  });
 }
 
 async function fetchComments(
