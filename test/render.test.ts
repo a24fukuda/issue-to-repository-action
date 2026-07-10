@@ -1,24 +1,22 @@
 import { describe, expect, it } from "bun:test";
 import { issueFileName, renderIssueFile } from "../src/render";
 import type { IssueRecord } from "../src/types";
+import { makeIssue as makeBaseIssue } from "./fixtures";
 
+// Wraps the shared fixture with this file's own conventions (a populated
+// issue with labels/assignees/milestone) so the field list itself has one
+// source of truth, without giving up file-local defaults.
 function makeIssue(overrides: Partial<IssueRecord> = {}): IssueRecord {
-  return {
+  return makeBaseIssue({
     number: 42,
     title: "Something broke",
-    url: "https://github.com/owner/repo/issues/42",
-    state: "open",
-    authorLogin: "alice",
     labels: ["bug"],
     assignees: ["bob"],
     milestone: "v1.0",
-    createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-02T00:00:00Z",
-    closedAt: null,
     body: "Steps to reproduce...",
-    comments: [],
     ...overrides,
-  };
+  });
 }
 
 describe("issueFileName", () => {

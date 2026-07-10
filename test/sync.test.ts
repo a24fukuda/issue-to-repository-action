@@ -4,24 +4,13 @@ import path from "node:path";
 import { beforeEach, describe, expect, it } from "bun:test";
 import { syncIssueFiles } from "../src/sync";
 import type { IssueRecord } from "../src/types";
+import { makeIssue as makeBaseIssue } from "./fixtures";
 
+// Thin (number, overrides) wrapper around the shared fixture — this file's
+// tests read more clearly keying off the issue number positionally, but
+// the field list itself has one source of truth in ./fixtures.
 function makeIssue(number: number, overrides: Partial<IssueRecord> = {}): IssueRecord {
-  return {
-    number,
-    title: `Issue ${number}`,
-    url: `https://github.com/owner/repo/issues/${number}`,
-    state: "open",
-    authorLogin: "alice",
-    labels: [],
-    assignees: [],
-    milestone: null,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-    closedAt: null,
-    body: "body",
-    comments: [],
-    ...overrides,
-  };
+  return makeBaseIssue({ number, ...overrides });
 }
 
 describe("syncIssueFiles", () => {
@@ -115,5 +104,4 @@ describe("syncIssueFiles", () => {
     const result = await syncIssueFiles(dir, [makeIssue(1), makeIssue(2)]);
     expect(result.written).toEqual([]);
   });
-
 });

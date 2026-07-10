@@ -34,7 +34,10 @@ export async function fetchIssues(
   const nonPrIssues = issues.filter((issue: Issue) => !issue.pull_request);
 
   return mapWithConcurrency(nonPrIssues, COMMENT_FETCH_CONCURRENCY, async (issue: Issue) => {
-    const comments = await fetchComments(octokit, owner, repo, issue.number);
+    // The issue list response already carries the comment count; skip the
+    // extra request entirely for the (often large) share of issues with no
+    // comments at all instead of always fetching-then-discarding an empty page.
+    const comments = issue.comments > 0 ? await fetchComments(octokit, owner, repo, issue.number) : [];
 
     return {
       number: issue.number,

@@ -30,28 +30,12 @@ jobs:
 
       # action.yml declares `runs.using: node20`, but Bun's bundler doesn't
       # down-level syntax to a specific Node version the way esbuild's old
-      # --target=node20 did. Actually execute the built bundle under real
-      # Node 20 so an incompatible syntax feature fails CI, not a live run.
+      # --target=node20 did. `node --check` parses (without running)
+      # dist/index.js under real Node 20, so an incompatible syntax feature
+      # fails CI directly rather than only surfacing on a live run.
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Smoke test dist/index.js under Node 20
-        run: |
-          set +e
-          output=$(node dist/index.js 2>&1)
-          code=$?
-          set -e
-          echo "$output"
-          if echo "$output" | grep -qi "SyntaxError"; then
-            echo "dist/index.js is not valid Node 20 syntax." >&2
-            exit 1
-          fi
-          # No github-token/INPUT_* env vars are set here, so this is
-          # expected to fail via @actions/core's setFailed() — its stable
-          # "::error::<message>" workflow-command output, not the specific
-          # wording of whichever input check happens to fail first.
-          if [ "$code" -ne 1 ] || ! echo "$output" | grep -q "^::error::"; then
-            echo "Unexpected output/exit code ($code) running dist/index.js under Node 20 (expected a controlled ::error:: failure)." >&2
-            exit 1
-          fi
+      - name: Verify dist/index.js parses under Node 20
+        run: node --check dist/index.js

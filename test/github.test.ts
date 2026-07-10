@@ -4,6 +4,7 @@ import { fetchIssues } from "../src/github";
 function makeFakeOctokit(overrides: {
   issues: unknown[];
   commentsByIssue: Record<number, unknown[]>;
+  onListComments?: (issueNumber: number) => void;
 }) {
   return {
     rest: {
@@ -15,6 +16,7 @@ function makeFakeOctokit(overrides: {
     paginate: async (endpoint: unknown, params: Record<string, unknown>) => {
       if (endpoint === "listForRepo-marker") return overrides.issues;
       if (endpoint === "listComments-marker") {
+        overrides.onListComments?.(params.issue_number as number);
         return overrides.commentsByIssue[params.issue_number as number] ?? [];
       }
       throw new Error("unexpected endpoint");
@@ -39,6 +41,7 @@ describe("fetchIssues", () => {
           updated_at: "2026-01-02T00:00:00Z",
           closed_at: null,
           body: "It broke.",
+          comments: 1,
         },
       ],
       commentsByIssue: {
@@ -88,6 +91,7 @@ describe("fetchIssues", () => {
           updated_at: "2026-01-01T00:00:00Z",
           closed_at: null,
           body: "",
+          comments: 0,
         },
       ],
       commentsByIssue: {},
@@ -96,5 +100,37 @@ describe("fetchIssues", () => {
     const records = await fetchIssues(octokit as never, "owner", "repo");
 
     expect(records).toEqual([]);
+  });
+
+  it("skips fetching comments for an issue that has none", async () => {
+    let listCommentsCalls = 0;
+    const octokit = makeFakeOctokit({
+      issues: [
+        {
+          number: 3,
+          title: "No comments here",
+          html_url: "https://github.com/owner/repo/issues/3",
+          state: "open",
+          user: { login: "alice" },
+          labels: [],
+          assignees: [],
+          milestone: null,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          closed_at: null,
+          body: "",
+          comments: 0,
+        },
+      ],
+      commentsByIssue: {},
+      onListComments: () => {
+        listCommentsCalls++;
+      },
+    });
+
+    const records = await fetchIssues(octokit as never, "owner", "repo");
+
+    expect(records[0].comments).toEqual([]);
+    expect(listCommentsCalls).toBe(0);
   });
 });

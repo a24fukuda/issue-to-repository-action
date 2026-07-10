@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import * as core from "@actions/core";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { RunDependencies } from "../src/run";
 import { run } from "../src/run";
@@ -43,9 +44,11 @@ afterEach(() => {
 function makeDeps(overrides: Partial<RunDependencies> = {}): RunDependencies {
   return {
     createOctokit: () => ({}) as never,
+    getCurrentBranch: async () => "main",
     fetchIssues: async () => [] as IssueRecord[],
     syncIssueFiles: async () => ({ written: [], deleted: [] }),
     commitAndPush: async () => null,
+    setOutput: core.setOutput,
     ...overrides,
   };
 }
@@ -99,6 +102,22 @@ describe("run", () => {
       }),
     );
     expect(commitAndPushCalled).toBe(true);
+  });
+
+  it("checks the current branch before fetching issues, to fail fast on a bad checkout", async () => {
+    let fetchIssuesCalled = false;
+    await run(
+      makeDeps({
+        getCurrentBranch: async () => {
+          throw new Error("detached HEAD");
+        },
+        fetchIssues: async () => {
+          fetchIssuesCalled = true;
+          return [];
+        },
+      }),
+    );
+    expect(fetchIssuesCalled).toBe(false);
   });
 });
 
@@ -157,6 +176,31 @@ describe("run output contract", () => {
       }),
     );
     expect(readOutputs().changed).toBe("false");
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("does not downgrade changed=true to false if a later output write fails", async () => {
+    // Regression test: setOutput appends to GITHUB_OUTPUT, and the catch
+    // block used to unconditionally set changed=false on any error. If the
+    // commit-sha setOutput call failed *after* changed=true had already
+    // been written (a real push landed), that would silently downgrade an
+    // accurate "true" to an inaccurate "false".
+    await run(
+      makeDeps({
+        syncIssueFiles: async () => ({ written: ["1.md"], deleted: [] }),
+        commitAndPush: async () => "abc123",
+        setOutput: (name, value) => {
+          if (name === "commit-sha") {
+            throw new Error("simulated output-channel failure");
+          }
+          core.setOutput(name, value);
+        },
+      }),
+    );
+
+    expect(readOutputs().changed).toBe("true");
+    // setFailed still runs — the output-channel failure is itself a real
+    // problem worth surfacing, even though `changed` stays accurate.
     expect(process.exitCode).toBe(1);
   });
 });

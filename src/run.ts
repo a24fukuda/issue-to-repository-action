@@ -1,6 +1,6 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import { commitAndPush as defaultCommitAndPush } from "./git";
+import { commitAndPush as defaultCommitAndPush, getCurrentBranch as defaultGetCurrentBranch } from "./git";
 import { fetchIssues as defaultFetchIssues } from "./github";
 import { createOctokit as defaultCreateOctokit } from "./octokit";
 import { syncIssueFiles as defaultSyncIssueFiles } from "./sync";
@@ -10,6 +10,8 @@ export interface RunDependencies {
   syncIssueFiles: typeof defaultSyncIssueFiles;
   commitAndPush: typeof defaultCommitAndPush;
   createOctokit: typeof defaultCreateOctokit;
+  getCurrentBranch: typeof defaultGetCurrentBranch;
+  setOutput: typeof core.setOutput;
 }
 
 const defaultDependencies: RunDependencies = {
@@ -17,6 +19,8 @@ const defaultDependencies: RunDependencies = {
   syncIssueFiles: defaultSyncIssueFiles,
   commitAndPush: defaultCommitAndPush,
   createOctokit: defaultCreateOctokit,
+  getCurrentBranch: defaultGetCurrentBranch,
+  setOutput: core.setOutput,
 };
 
 // Dependencies are injectable (rather than imported and called directly)
@@ -24,6 +28,14 @@ const defaultDependencies: RunDependencies = {
 // mocking modules — module mocks apply process-wide in Bun's test runner
 // and leak across unrelated test files.
 export async function run(deps: RunDependencies = defaultDependencies): Promise<void> {
+  // Tracks whether `changed` has already been reported so the catch block
+  // below never overwrites a true result: setOutput appends to the
+  // GITHUB_OUTPUT file, last-write-wins, so if `changed=true` is reported
+  // and a later statement (e.g. the commit-sha setOutput call) throws, the
+  // catch block must not report changed=false for a push that genuinely
+  // landed.
+  let changedReported = false;
+
   try {
     const token = core.getInput("github-token", { required: true });
     const issuesDir = core.getInput("issues-dir") || "issues";
@@ -32,6 +44,12 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
     const committerEmail =
       core.getInput("committer-email") ||
       "41898282+github-actions[bot]@users.noreply.github.com";
+
+    // Check this before any API calls: a checkout that can't be pushed to
+    // (e.g. detached HEAD) means the whole run is going to fail anyway, so
+    // there's no point spending the API/time budget on fetching and
+    // syncing first.
+    const branch = await deps.getCurrentBranch();
 
     const { owner, repo } = github.context.repo;
     const octokit = deps.createOctokit(token);
@@ -46,7 +64,8 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
     const hasFileChanges = written.length > 0 || deleted.length > 0;
     if (!hasFileChanges) {
       core.info("No changes to commit.");
-      core.setOutput("changed", false);
+      deps.setOutput("changed", false);
+      changedReported = true;
       return;
     }
 
@@ -58,24 +77,38 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
       message: commitMessage,
       committerName,
       committerEmail,
+      branch,
     });
 
     if (sha) {
       core.info(`Committed and pushed ${sha}.`);
-      core.setOutput("changed", true);
-      core.setOutput("commit-sha", sha);
+      deps.setOutput("changed", true);
+      changedReported = true;
+      deps.setOutput("commit-sha", sha);
     } else {
       core.info("Working tree already matched staged changes; nothing to commit.");
-      core.setOutput("changed", false);
+      deps.setOutput("changed", false);
+      changedReported = true;
     }
   } catch (error) {
-    // Always report an explicit `changed=false` on failure — nothing was
+    // Report an explicit `changed=false` on failure — nothing was
     // committed — rather than leaving the output unset. A caller reading
     // `steps.<id>.outputs.changed` (e.g. via the reusable workflow's
     // `jobs.sync.outputs`) would otherwise see an empty string rather than
     // "false" when this action fails, which breaks strict `== 'true'` /
-    // `fromJSON(...)` checks downstream.
-    core.setOutput("changed", false);
+    // `fromJSON(...)` checks downstream. Skipped if `changed` was already
+    // reported (a real push landed before a later step failed), and
+    // wrapped in its own try/catch so a broken output channel can't
+    // prevent setFailed from running below.
+    if (!changedReported) {
+      try {
+        deps.setOutput("changed", false);
+      } catch (outputError) {
+        core.warning(
+          `Failed to set the "changed" output: ${outputError instanceof Error ? outputError.message : String(outputError)}`,
+        );
+      }
+    }
     core.setFailed(error instanceof Error ? error.message : String(error));
   }
 }

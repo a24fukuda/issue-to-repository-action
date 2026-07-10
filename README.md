@@ -142,6 +142,16 @@ executes) and CI (`.github/workflows/ci.yml`) fails a PR if it's out of
 date with `src/`. Run `bun run build` after any source change and commit
 the result.
 
+`.github/workflows/self-sync.yml` dogfoods `action.yml` directly (`uses:
+./`) on every push, so `src/` changes get exercised continuously. It does
+**not** exercise `.github/workflows/sync.yml` — that reusable workflow's
+own step pins the released `@v1` tag internally, so routing self-sync
+through it would test the last release instead of the current commit.
+Changes to `sync.yml` itself (permissions, secrets/outputs wiring) aren't
+covered by any automated workflow in this repo — review them by hand, and
+consider a manual end-to-end check against a real consumer repo after
+cutting a release that changes it.
+
 ## Development
 
 The toolchain (dependency install, type checking, tests, bundling) runs on

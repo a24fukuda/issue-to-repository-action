@@ -34,13 +34,12 @@ async function currentSha(): Promise<string> {
 }
 
 /**
- * Stages the synced directory and, if it differs from HEAD, commits and
- * pushes it. Returns the new commit SHA, or null if there was nothing to
- * commit.
+ * Resolves the current branch name, or throws if the checkout is in
+ * detached HEAD state. Cheap and side-effect-free, so callers should check
+ * this before doing any expensive work (e.g. fetching from GitHub's API)
+ * that would otherwise be wasted on a checkout that can never be pushed.
  */
-export async function commitAndPush(
-  options: CommitOptions,
-): Promise<string | null> {
+export async function getCurrentBranch(): Promise<string> {
   const branchCheck = await git(["symbolic-ref", "-q", "--short", "HEAD"]);
   if (branchCheck.exitCode !== 0) {
     throw new Error(
@@ -49,7 +48,18 @@ export async function commitAndPush(
         `fixed ref/SHA instead of a branch): ${branchCheck.stderr.trim() || "(no error output)"}`,
     );
   }
-  const branch = branchCheck.stdout.trim();
+  return branchCheck.stdout.trim();
+}
+
+/**
+ * Stages the synced directory and, if it differs from HEAD, commits and
+ * pushes it. Returns the new commit SHA, or null if there was nothing to
+ * commit.
+ */
+export async function commitAndPush(
+  options: CommitOptions & { branch: string },
+): Promise<string | null> {
+  const { branch } = options;
 
   assertSuccess(
     await git(["config", "user.name", options.committerName]),
@@ -64,6 +74,12 @@ export async function commitAndPush(
   const diff = await git(["diff", "--cached", "--quiet"]);
   if (diff.exitCode === 0) {
     return null;
+  }
+  if (diff.exitCode !== 1) {
+    // 0 = no staged differences, 1 = differences exist — anything else is a
+    // real git error (e.g. a corrupted index), not a "yes there's a diff"
+    // signal, and must not fall through to committing whatever is staged.
+    assertSuccess(diff, "git diff --cached --quiet");
   }
 
   assertSuccess(
