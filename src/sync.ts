@@ -19,8 +19,8 @@ async function readManifestRaw(manifestPath: string): Promise<string | null> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       core.warning(
-        `Could not read ${MANIFEST_FILE_NAME} (${(error as Error).message}) — treating this ` +
-          "run as if no files are owned yet, so no issue files will be deleted this run.",
+        `${MANIFEST_FILE_NAME} を読み込めませんでした（${(error as Error).message}） — ` +
+          "この実行ではまだ何もファイルを所有していないものとして扱うため、今回はIssueファイルを削除しません。",
       );
     }
     // ENOENT（マニフェストがまだない）は初回実行時には想定内なので、警告は出さない。
@@ -41,8 +41,8 @@ function parseManifest(raw: string | null): Set<string> {
   }
 
   core.warning(
-    `${MANIFEST_FILE_NAME} exists but isn't a valid list of file names — treating this run ` +
-      "as if no files are owned yet, so no issue files will be deleted this run.",
+    `${MANIFEST_FILE_NAME} は存在しますが、有効なファイル名のリストではありません — ` +
+      "この実行ではまだ何もファイルを所有していないものとして扱うため、今回はIssueファイルを削除しません。",
   );
   return new Set();
 }
@@ -115,9 +115,9 @@ export async function syncIssueFiles(
     const sample = skippedDeletion.slice(0, SKIPPED_DELETION_LOG_LIMIT).join(", ");
     const more = skippedDeletion.length - SKIPPED_DELETION_LOG_LIMIT;
     core.info(
-      `Not deleting ${skippedDeletion.length} file(s) with no matching issue, since they ` +
-        `aren't recorded in ${MANIFEST_FILE_NAME} as owned by this action: ${sample}` +
-        (more > 0 ? `, and ${more} more` : ""),
+      `対応するIssueがないファイルが${skippedDeletion.length}件ありますが、` +
+        `${MANIFEST_FILE_NAME} にこのアクションが所有しているファイルとして記録されていないため削除しません: ${sample}` +
+        (more > 0 ? `、他${more}件` : ""),
     );
   }
 

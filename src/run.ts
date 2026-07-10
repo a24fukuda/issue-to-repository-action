@@ -53,16 +53,16 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
     const { owner, repo } = github.context.repo;
     const octokit = deps.createOctokit(token);
 
-    core.info(`Fetching issues for ${owner}/${repo}...`);
+    core.info(`${owner}/${repo} のIssueを取得しています...`);
     const issues = await deps.fetchIssues(octokit, owner, repo);
-    core.info(`Fetched ${issues.length} issue(s).`);
+    core.info(`${issues.length}件のIssueを取得しました。`);
 
     const { written, deleted } = await deps.syncIssueFiles(issuesDir, issues);
-    core.info(`${written.length} file(s) written, ${deleted.length} file(s) deleted.`);
+    core.info(`${written.length}件のファイルを書き込み、${deleted.length}件のファイルを削除しました。`);
 
     const hasFileChanges = written.length > 0 || deleted.length > 0;
     if (!hasFileChanges) {
-      core.info("No changes to commit.");
+      core.info("コミットする変更はありません。");
       deps.setOutput("changed", false);
       changedReported = true;
       return;
@@ -80,12 +80,12 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
     });
 
     if (sha) {
-      core.info(`Committed and pushed ${sha}.`);
+      core.info(`${sha} をコミットしてpushしました。`);
       deps.setOutput("changed", true);
       changedReported = true;
       deps.setOutput("commit-sha", sha);
     } else {
-      core.info("Working tree already matched staged changes; nothing to commit.");
+      core.info("作業ツリーはステージ済みの変更と既に一致していたため、コミットするものはありませんでした。");
       deps.setOutput("changed", false);
       changedReported = true;
     }
@@ -105,7 +105,7 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
         deps.setOutput("changed", false);
       } catch (outputError) {
         core.warning(
-          `Failed to set the "changed" output: ${outputError instanceof Error ? outputError.message : String(outputError)}`,
+          `"changed" 出力の設定に失敗しました: ${outputError instanceof Error ? outputError.message : String(outputError)}`,
         );
       }
     }

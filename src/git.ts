@@ -23,7 +23,7 @@ function assertSuccess(
   action: string,
 ): void {
   if (result.exitCode !== 0) {
-    throw new Error(`${action} failed (exit ${result.exitCode}): ${result.stderr.trim()}`);
+    throw new Error(`${action} に失敗しました（終了コード ${result.exitCode}）: ${result.stderr.trim()}`);
   }
 }
 
@@ -43,9 +43,9 @@ export async function getCurrentBranch(): Promise<string> {
   const branchCheck = await git(["symbolic-ref", "-q", "--short", "HEAD"]);
   if (branchCheck.exitCode !== 0) {
     throw new Error(
-      "Could not resolve the current branch — cannot push a sync commit. This " +
-        "usually means the checkout is in detached HEAD state (checked out a " +
-        `fixed ref/SHA instead of a branch): ${branchCheck.stderr.trim() || "(no error output)"}`,
+      "現在のブランチを解決できませんでした — 同期コミットをpushできません。" +
+        "通常はチェックアウトがdetached HEAD状態（ブランチではなく固定の" +
+        `ref/SHAをチェックアウトした状態）であることが原因です: ${branchCheck.stderr.trim() || "（エラー出力なし）"}`,
     );
   }
   return branchCheck.stdout.trim();
@@ -107,11 +107,11 @@ export async function commitAndPush(
     if (rebase.exitCode !== 0) {
       const abort = await git(["rebase", "--abort"]);
       if (abort.exitCode !== 0) {
-        core.warning(`git rebase --abort also failed: ${abort.stderr.trim()}`);
+        core.warning(`git rebase --abort にも失敗しました: ${abort.stderr.trim()}`);
       }
       throw new Error(
-        `git push was rejected and rebasing onto origin/${branch} failed ` +
-          `(likely a real content conflict, not just a transient race): ${rebase.stderr.trim()}`,
+        `git pushが拒否され、origin/${branch} へのrebaseにも失敗しました` +
+          `（一時的な競合ではなく、実際の content conflict の可能性があります）: ${rebase.stderr.trim()}`,
       );
     }
     sha = await currentSha();
