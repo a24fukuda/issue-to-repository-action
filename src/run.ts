@@ -51,6 +51,13 @@ export async function run(): Promise<void> {
       core.setOutput("changed", false);
     }
   } catch (error) {
+    // Always report an explicit `changed=false` on failure — nothing was
+    // committed — rather than leaving the output unset. A caller reading
+    // `steps.<id>.outputs.changed` (e.g. via the reusable workflow's
+    // `jobs.sync.outputs`) would otherwise see an empty string rather than
+    // "false" when this action fails, which breaks strict `== 'true'` /
+    // `fromJSON(...)` checks downstream.
+    core.setOutput("changed", false);
     core.setFailed(error instanceof Error ? error.message : String(error));
   }
 }

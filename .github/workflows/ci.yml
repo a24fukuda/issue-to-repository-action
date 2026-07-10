@@ -47,9 +47,11 @@ jobs:
             echo "dist/index.js is not valid Node 20 syntax." >&2
             exit 1
           fi
-          # Expected to fail with a missing-input error (no github-token
-          # env var here) — anything else is unexpected.
-          if [ "$code" -ne 1 ] || ! echo "$output" | grep -q "Input required and not supplied"; then
-            echo "Unexpected output/exit code ($code) running dist/index.js under Node 20." >&2
+          # No github-token/INPUT_* env vars are set here, so this is
+          # expected to fail via @actions/core's setFailed() — its stable
+          # "::error::<message>" workflow-command output, not the specific
+          # wording of whichever input check happens to fail first.
+          if [ "$code" -ne 1 ] || ! echo "$output" | grep -q "^::error::"; then
+            echo "Unexpected output/exit code ($code) running dist/index.js under Node 20 (expected a controlled ::error:: failure)." >&2
             exit 1
           fi

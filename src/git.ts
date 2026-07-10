@@ -37,8 +37,9 @@ export async function commitAndPush(
   const branchCheck = await git(["symbolic-ref", "-q", "--short", "HEAD"]);
   if (branchCheck.exitCode !== 0) {
     throw new Error(
-      "Not currently on a branch (detached HEAD) — cannot push a sync commit. " +
-        "Make sure the workflow checks out a branch, not a fixed ref/SHA.",
+      "Could not resolve the current branch — cannot push a sync commit. This " +
+        "usually means the checkout is in detached HEAD state (checked out a " +
+        `fixed ref/SHA instead of a branch): ${branchCheck.stderr.trim() || "(no error output)"}`,
     );
   }
 
@@ -62,26 +63,14 @@ export async function commitAndPush(
     "git commit",
   );
 
-  let push = await git(["push"]);
-  if (push.exitCode !== 0) {
-    // The batch design assumes exclusive ownership of the branch (enforced
-    // by the concurrency group in sync.yml/self-sync.yml), but an external
-    // push landing between checkout and push can still reject a
-    // non-fast-forward update. Rebase onto the latest remote state and
-    // retry once before giving up.
-    const branch = branchCheck.stdout.trim();
-    assertSuccess(await git(["fetch", "origin", branch]), "git fetch");
-    const rebase = await git(["rebase", `origin/${branch}`]);
-    if (rebase.exitCode !== 0) {
-      await git(["rebase", "--abort"]);
-      throw new Error(
-        `git push was rejected and rebasing onto origin/${branch} failed ` +
-          `(likely a real content conflict): ${rebase.stderr.trim()}`,
-      );
-    }
-    push = await git(["push"]);
-  }
-  assertSuccess(push, "git push");
+  // No retry-on-rejection here by design: the batch model assumes exclusive
+  // ownership of the branch for this sync, enforced by the concurrency
+  // group in sync.yml/self-sync.yml (see README's Design section). If a
+  // push is still rejected — e.g. an external commit landed, or a caller
+  // used the direct-action path without its own concurrency group — fail
+  // clearly and let the next run's full regeneration reconcile state,
+  // rather than layering retry/rebase logic onto a single batch commit.
+  assertSuccess(await git(["push"]), "git push");
 
   const rev = await git(["rev-parse", "HEAD"]);
   assertSuccess(rev, "git rev-parse");

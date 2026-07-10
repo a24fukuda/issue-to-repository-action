@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import * as core from "@actions/core";
 import { issueFileName, renderIssueFile } from "./render";
 import type { IssueRecord } from "./types";
 
@@ -11,17 +12,31 @@ export interface SyncResult {
   deleted: string[];
 }
 
-async function readManifest(manifestPath: string): Promise<Set<string>> {
+async function readManifestRaw(manifestPath: string): Promise<string | null> {
   try {
-    const raw = await readFile(manifestPath, "utf8");
+    return await readFile(manifestPath, "utf8");
+  } catch {
+    // No manifest file yet — expected on the very first run.
+    return null;
+  }
+}
+
+function parseManifest(raw: string | null): Set<string> {
+  if (raw === null) return new Set();
+
+  try {
     const parsed: unknown = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.every((entry) => typeof entry === "string")) {
       return new Set(parsed);
     }
   } catch {
-    // No manifest yet (first run) or it's unreadable/corrupt — treat as
-    // "we don't know what we own", so nothing gets deleted this run.
+    // fall through to the warning below
   }
+
+  core.warning(
+    `${MANIFEST_FILE_NAME} exists but isn't valid JSON — treating this run as if no ` +
+      "files are owned yet, so no issue files will be deleted this run.",
+  );
   return new Set();
 }
 
@@ -48,7 +63,8 @@ export async function syncIssueFiles(
   }
 
   const manifestPath = path.join(dir, MANIFEST_FILE_NAME);
-  const previouslyOwned = await readManifest(manifestPath);
+  const previousManifestRaw = await readManifestRaw(manifestPath);
+  const previouslyOwned = parseManifest(previousManifestRaw);
 
   const entries = await readdir(dir, { withFileTypes: true });
   const existingFiles = new Set(
@@ -71,14 +87,32 @@ export async function syncIssueFiles(
   }
 
   const deleted: string[] = [];
+  const skippedDeletion: string[] = [];
   for (const fileName of existingFiles) {
-    if (!desired.has(fileName) && previouslyOwned.has(fileName)) {
+    if (desired.has(fileName)) continue;
+    if (previouslyOwned.has(fileName)) {
       await rm(path.join(dir, fileName));
       deleted.push(fileName);
+    } else {
+      skippedDeletion.push(fileName);
     }
   }
+  if (skippedDeletion.length > 0) {
+    core.info(
+      `Not deleting ${skippedDeletion.length} file(s) with no matching issue, since they ` +
+        `aren't recorded in ${MANIFEST_FILE_NAME} as owned by this action: ${skippedDeletion.join(", ")}`,
+    );
+  }
 
-  await writeFile(manifestPath, `${JSON.stringify([...desired.keys()].sort(), null, 2)}\n`, "utf8");
+  // Only rewrite the manifest — and only report it as written — when its
+  // content actually changes, so a run with no issue changes (the common
+  // case) doesn't produce a write that syncIssueFiles' caller has no way
+  // to know it needs to commit.
+  const manifestContent = `${JSON.stringify([...desired.keys()].sort(), null, 2)}\n`;
+  if (previousManifestRaw !== manifestContent) {
+    await writeFile(manifestPath, manifestContent, "utf8");
+    written.push(MANIFEST_FILE_NAME);
+  }
 
   return { written, deleted };
 }

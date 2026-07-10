@@ -10,10 +10,13 @@ type Assignee = NonNullable<Issue["assignees"]>[number];
 type Comment =
   Endpoints["GET /repos/{owner}/{repo}/issues/{issue_number}/comments"]["response"]["data"][number];
 
-// Bounds how many issues' comment threads are fetched concurrently. The
-// throttling plugin on the Octokit instance handles backing off when this
-// still trips GitHub's rate limits.
-const COMMENT_FETCH_CONCURRENCY = 8;
+// Bounds how many issues' comment threads are fetched concurrently. Kept
+// modest (rather than e.g. 8+) because GitHub's secondary rate limit is
+// triggered by concurrent request volume — the throttling plugin on the
+// Octokit instance retries a rate-limited request, but each concurrent
+// request backs off independently, so a burst of many at once can retrigger
+// the same limit repeatedly instead of the batch settling down as a whole.
+const COMMENT_FETCH_CONCURRENCY = 4;
 
 export async function fetchIssues(
   octokit: Octokit,

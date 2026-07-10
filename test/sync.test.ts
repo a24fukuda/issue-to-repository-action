@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "bun:test";
@@ -31,9 +31,9 @@ describe("syncIssueFiles", () => {
     dir = await mkdtemp(path.join(os.tmpdir(), "issue-sync-"));
   });
 
-  it("creates a file per issue", async () => {
+  it("creates a file per issue and reports the manifest as written too", async () => {
     const result = await syncIssueFiles(dir, [makeIssue(1), makeIssue(2)]);
-    expect(result.written.sort()).toEqual(["1.md", "2.md"]);
+    expect(result.written.sort()).toEqual([".manifest.json", "1.md", "2.md"]);
     expect(result.deleted).toEqual([]);
     expect((await readdir(dir)).sort()).toEqual([".manifest.json", "1.md", "2.md"]);
   });
@@ -46,11 +46,22 @@ describe("syncIssueFiles", () => {
     expect(content).toContain("New title");
   });
 
-  it("does not rewrite files whose content is unchanged", async () => {
+  it("does not rewrite files (including the manifest) when nothing changed", async () => {
     await syncIssueFiles(dir, [makeIssue(1)]);
     const result = await syncIssueFiles(dir, [makeIssue(1)]);
     expect(result.written).toEqual([]);
     expect(result.deleted).toEqual([]);
+  });
+
+  it("reports the manifest as written if it's missing, even though issue content is unchanged", async () => {
+    // Regression test: syncIssueFiles used to write the manifest
+    // unconditionally without reporting it in `written`, so a run with no
+    // issue-content changes never triggered a commit — meaning the
+    // manifest could never actually land in git history.
+    await syncIssueFiles(dir, [makeIssue(1)]);
+    await rm(path.join(dir, ".manifest.json"));
+    const result = await syncIssueFiles(dir, [makeIssue(1)]);
+    expect(result.written).toEqual([".manifest.json"]);
   });
 
   it("deletes files for issues that no longer exist (closed/deleted upstream)", async () => {
@@ -74,5 +85,13 @@ describe("syncIssueFiles", () => {
     const result = await syncIssueFiles(dir, [makeIssue(1)]);
     expect(result.deleted).toEqual([]);
     expect(await readFile(path.join(dir, "2.md"), "utf8")).toBe("not ours\n");
+  });
+
+  it("treats a corrupt manifest as owning nothing, without throwing", async () => {
+    await syncIssueFiles(dir, [makeIssue(1), makeIssue(2)]);
+    await writeFile(path.join(dir, ".manifest.json"), "{ not valid json", "utf8");
+    const result = await syncIssueFiles(dir, [makeIssue(1)]);
+    expect(result.deleted).toEqual([]);
+    expect(await readFile(path.join(dir, "2.md"), "utf8")).toContain("Issue 2");
   });
 });
