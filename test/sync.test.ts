@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { syncIssueFiles } from "../src/sync";
 import type { IssueRecord } from "../src/types";
 

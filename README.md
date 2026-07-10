@@ -122,14 +122,20 @@ git push -f origin v1
 
 `dist/index.js` is committed (it's what `runs.main` in `action.yml`
 executes) and CI (`.github/workflows/ci.yml`) fails a PR if it's out of
-date with `src/`. Run `npm run build` after any source change and commit
+date with `src/`. Run `bun run build` after any source change and commit
 the result.
 
 ## Development
 
+The toolchain (dependency install, type checking, tests, bundling) runs on
+[Bun](https://bun.sh). The action itself still executes on Node.js at
+runtime (`runs.using: node20` in `action.yml`) — `bun build` targets
+Node (`--target=node --format=cjs`), so `dist/index.js` is plain
+Node-compatible CommonJS, not a Bun-only bundle.
+
 ```sh
-npm ci
-npm run typecheck
-npm test
-npm run build   # regenerates dist/index.js
+bun install
+bun run typecheck
+bun test
+bun run build   # regenerates dist/index.js
 ```

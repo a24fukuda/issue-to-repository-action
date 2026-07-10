@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "bun:test";
 import { issueFileName, renderIssueFile } from "../src/render";
 import type { IssueRecord } from "../src/types";
 
