@@ -25,7 +25,7 @@ on:
         required: false
     outputs:
       changed:
-        description: "Whether any issue files were added, updated, or deleted."
+        description: "Whether a sync commit was pushed — issue files changed, or (on the first run against a pre-existing directory) internal tracking metadata needed to be established."
         value: ${{ jobs.sync.outputs.changed }}
       commit-sha:
         description: "SHA of the sync commit, if one was created."

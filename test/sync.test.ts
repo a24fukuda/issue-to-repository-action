@@ -94,4 +94,26 @@ describe("syncIssueFiles", () => {
     expect(result.deleted).toEqual([]);
     expect(await readFile(path.join(dir, "2.md"), "utf8")).toContain("Issue 2");
   });
+
+  it("does not write anything on a first run with no issues", async () => {
+    // Regression test: comparing raw manifest bytes (instead of the parsed
+    // owned-file set) used to report the manifest as written even when
+    // there was nothing to track, producing a pointless commit for a repo
+    // with zero issues.
+    const result = await syncIssueFiles(dir, []);
+    expect(result.written).toEqual([]);
+    expect(result.deleted).toEqual([]);
+    expect(await readdir(dir)).toEqual([]);
+  });
+
+  it("does not rewrite the manifest when only its formatting would differ", async () => {
+    // Regression test: the write-skip check used to compare raw file
+    // bytes, so e.g. line-ending normalization on checkout could make an
+    // unchanged owned-file set look "changed" every single run.
+    await syncIssueFiles(dir, [makeIssue(1), makeIssue(2)]);
+    await writeFile(path.join(dir, ".manifest.json"), '["1.md","2.md"]', "utf8");
+    const result = await syncIssueFiles(dir, [makeIssue(1), makeIssue(2)]);
+    expect(result.written).toEqual([]);
+  });
+
 });

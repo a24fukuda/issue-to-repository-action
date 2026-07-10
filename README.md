@@ -8,9 +8,16 @@ made survives independently of GitHub.
 
 - **Batch, not real-time.** On every run, all issues are re-fetched from the
   API and the `issues/` directory is fully regenerated in a single commit.
-  There is no per-event incremental commit, so there is no push-conflict
-  handling to build or reason about — concurrent triggers are serialized by
-  a `concurrency` group instead.
+  There's no per-event incremental commit, so there's no need to reconcile
+  multiple *simultaneous runs of this action* writing to the same branch —
+  a `concurrency` group (in `sync.yml`/`self-sync.yml`) serializes those. A
+  concurrency group can't stop an unrelated commit (a merged PR, another
+  bot) landing on the same branch while this run is mid-fetch, though, so
+  the sync commit still does one fetch-and-rebase retry on a rejected push
+  before giving up. If a run still fails outright (a genuine content
+  conflict, or a caller using the direct-action path with no concurrency
+  group of its own), nothing retries it automatically — `issues/` stays
+  stale until the next scheduled or event-triggered run.
 - **One file per issue**, named `issues/<number>.md`.
 - **Open/closed is a frontmatter field** (`state: open` / `state: closed`),
   not a directory split — closing an issue never renames/moves its file, so

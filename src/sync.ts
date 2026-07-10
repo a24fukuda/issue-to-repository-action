@@ -6,6 +6,7 @@ import type { IssueRecord } from "./types";
 
 const ISSUE_FILE_PATTERN = /^\d+\.md$/;
 const MANIFEST_FILE_NAME = ".manifest.json";
+const SKIPPED_DELETION_LOG_LIMIT = 10;
 
 export interface SyncResult {
   written: string[];
@@ -15,8 +16,14 @@ export interface SyncResult {
 async function readManifestRaw(manifestPath: string): Promise<string | null> {
   try {
     return await readFile(manifestPath, "utf8");
-  } catch {
-    // No manifest file yet — expected on the very first run.
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      core.warning(
+        `Could not read ${MANIFEST_FILE_NAME} (${(error as Error).message}) — treating this ` +
+          "run as if no files are owned yet, so no issue files will be deleted this run.",
+      );
+    }
+    // ENOENT (no manifest yet) is expected on the very first run — stay quiet.
     return null;
   }
 }
@@ -34,10 +41,18 @@ function parseManifest(raw: string | null): Set<string> {
   }
 
   core.warning(
-    `${MANIFEST_FILE_NAME} exists but isn't valid JSON — treating this run as if no ` +
-      "files are owned yet, so no issue files will be deleted this run.",
+    `${MANIFEST_FILE_NAME} exists but isn't a valid list of file names — treating this run ` +
+      "as if no files are owned yet, so no issue files will be deleted this run.",
   );
   return new Set();
+}
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const item of a) {
+    if (!b.has(item)) return false;
+  }
+  return true;
 }
 
 /**
@@ -63,8 +78,7 @@ export async function syncIssueFiles(
   }
 
   const manifestPath = path.join(dir, MANIFEST_FILE_NAME);
-  const previousManifestRaw = await readManifestRaw(manifestPath);
-  const previouslyOwned = parseManifest(previousManifestRaw);
+  const previouslyOwned = parseManifest(await readManifestRaw(manifestPath));
 
   const entries = await readdir(dir, { withFileTypes: true });
   const existingFiles = new Set(
@@ -98,18 +112,24 @@ export async function syncIssueFiles(
     }
   }
   if (skippedDeletion.length > 0) {
+    const sample = skippedDeletion.slice(0, SKIPPED_DELETION_LOG_LIMIT).join(", ");
+    const more = skippedDeletion.length - SKIPPED_DELETION_LOG_LIMIT;
     core.info(
       `Not deleting ${skippedDeletion.length} file(s) with no matching issue, since they ` +
-        `aren't recorded in ${MANIFEST_FILE_NAME} as owned by this action: ${skippedDeletion.join(", ")}`,
+        `aren't recorded in ${MANIFEST_FILE_NAME} as owned by this action: ${sample}` +
+        (more > 0 ? `, and ${more} more` : ""),
     );
   }
 
-  // Only rewrite the manifest — and only report it as written — when its
-  // content actually changes, so a run with no issue changes (the common
-  // case) doesn't produce a write that syncIssueFiles' caller has no way
-  // to know it needs to commit.
-  const manifestContent = `${JSON.stringify([...desired.keys()].sort(), null, 2)}\n`;
-  if (previousManifestRaw !== manifestContent) {
+  // Only rewrite the manifest — and only report it as written — when the
+  // set of owned files actually changes, so a run with no issue changes
+  // (the common case) doesn't produce a write that syncIssueFiles' caller
+  // has no way to know it needs to commit. Compared by parsed content, not
+  // raw bytes, so formatting (e.g. line-ending normalization on checkout)
+  // can't make this spuriously differ.
+  const desiredFileNames = new Set(desired.keys());
+  if (!setsEqual(previouslyOwned, desiredFileNames)) {
+    const manifestContent = `${JSON.stringify([...desiredFileNames].sort(), null, 2)}\n`;
     await writeFile(manifestPath, manifestContent, "utf8");
     written.push(MANIFEST_FILE_NAME);
   }

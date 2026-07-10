@@ -1,11 +1,29 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
-import { commitAndPush } from "./git";
-import { fetchIssues } from "./github";
-import { createOctokit } from "./octokit";
-import { syncIssueFiles } from "./sync";
+import { commitAndPush as defaultCommitAndPush } from "./git";
+import { fetchIssues as defaultFetchIssues } from "./github";
+import { createOctokit as defaultCreateOctokit } from "./octokit";
+import { syncIssueFiles as defaultSyncIssueFiles } from "./sync";
 
-export async function run(): Promise<void> {
+export interface RunDependencies {
+  fetchIssues: typeof defaultFetchIssues;
+  syncIssueFiles: typeof defaultSyncIssueFiles;
+  commitAndPush: typeof defaultCommitAndPush;
+  createOctokit: typeof defaultCreateOctokit;
+}
+
+const defaultDependencies: RunDependencies = {
+  fetchIssues: defaultFetchIssues,
+  syncIssueFiles: defaultSyncIssueFiles,
+  commitAndPush: defaultCommitAndPush,
+  createOctokit: defaultCreateOctokit,
+};
+
+// Dependencies are injectable (rather than imported and called directly)
+// so tests can exercise the output-setting orchestration below without
+// mocking modules — module mocks apply process-wide in Bun's test runner
+// and leak across unrelated test files.
+export async function run(deps: RunDependencies = defaultDependencies): Promise<void> {
   try {
     const token = core.getInput("github-token", { required: true });
     const issuesDir = core.getInput("issues-dir") || "issues";
@@ -16,13 +34,13 @@ export async function run(): Promise<void> {
       "41898282+github-actions[bot]@users.noreply.github.com";
 
     const { owner, repo } = github.context.repo;
-    const octokit = createOctokit(token);
+    const octokit = deps.createOctokit(token);
 
     core.info(`Fetching issues for ${owner}/${repo}...`);
-    const issues = await fetchIssues(octokit, owner, repo);
+    const issues = await deps.fetchIssues(octokit, owner, repo);
     core.info(`Fetched ${issues.length} issue(s).`);
 
-    const { written, deleted } = await syncIssueFiles(issuesDir, issues);
+    const { written, deleted } = await deps.syncIssueFiles(issuesDir, issues);
     core.info(`${written.length} file(s) written, ${deleted.length} file(s) deleted.`);
 
     const hasFileChanges = written.length > 0 || deleted.length > 0;
@@ -35,7 +53,7 @@ export async function run(): Promise<void> {
     // Only report `changed`/`commit-sha` once the commit has actually
     // landed — setting them from the file diff alone would report a
     // change even if the push below fails or turns out to be a no-op.
-    const sha = await commitAndPush({
+    const sha = await deps.commitAndPush({
       dir: issuesDir,
       message: commitMessage,
       committerName,

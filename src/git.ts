@@ -1,3 +1,4 @@
+import * as core from "@actions/core";
 import * as exec from "@actions/exec";
 
 export interface CommitOptions {
@@ -26,6 +27,12 @@ function assertSuccess(
   }
 }
 
+async function currentSha(): Promise<string> {
+  const rev = await git(["rev-parse", "HEAD"]);
+  assertSuccess(rev, "git rev-parse");
+  return rev.stdout.trim();
+}
+
 /**
  * Stages the synced directory and, if it differs from HEAD, commits and
  * pushes it. Returns the new commit SHA, or null if there was nothing to
@@ -42,6 +49,7 @@ export async function commitAndPush(
         `fixed ref/SHA instead of a branch): ${branchCheck.stderr.trim() || "(no error output)"}`,
     );
   }
+  const branch = branchCheck.stdout.trim();
 
   assertSuccess(
     await git(["config", "user.name", options.committerName]),
@@ -63,16 +71,38 @@ export async function commitAndPush(
     "git commit",
   );
 
-  // No retry-on-rejection here by design: the batch model assumes exclusive
-  // ownership of the branch for this sync, enforced by the concurrency
-  // group in sync.yml/self-sync.yml (see README's Design section). If a
-  // push is still rejected — e.g. an external commit landed, or a caller
-  // used the direct-action path without its own concurrency group — fail
-  // clearly and let the next run's full regeneration reconcile state,
-  // rather than layering retry/rebase logic onto a single batch commit.
-  assertSuccess(await git(["push"]), "git push");
+  // A concurrency group (sync.yml/self-sync.yml) only serializes runs of
+  // this action against each other — it does nothing to stop an unrelated
+  // commit (a merged PR, another bot) landing on the same branch while
+  // this run was fetching from the GitHub API. Since our commit's tree is
+  // always this run's full regenerated snapshot of `options.dir` (not an
+  // incremental diff), a rejected push can be recovered by rebasing onto
+  // the new tip and retrying once — the rebase only needs to replay a
+  // change confined to `options.dir`, which nothing outside this action is
+  // expected to touch, so a genuine textual conflict here is a real
+  // anomaly worth surfacing, not something to retry further.
+  let sha = await currentSha();
+  let push = await git(["push"]);
+  if (push.exitCode !== 0) {
+    assertSuccess(await git(["fetch", "origin", branch]), "git fetch");
+    const rebase = await git(["rebase", `origin/${branch}`]);
+    if (rebase.exitCode !== 0) {
+      const abort = await git(["rebase", "--abort"]);
+      if (abort.exitCode !== 0) {
+        core.warning(`git rebase --abort also failed: ${abort.stderr.trim()}`);
+      }
+      throw new Error(
+        `git push was rejected and rebasing onto origin/${branch} failed ` +
+          `(likely a real content conflict, not just a transient race): ${rebase.stderr.trim()}`,
+      );
+    }
+    sha = await currentSha();
+    push = await git(["push"]);
+  }
 
-  const rev = await git(["rev-parse", "HEAD"]);
-  assertSuccess(rev, "git rev-parse");
-  return rev.stdout.trim();
+  // Assert last, with `sha` already captured: `git push` doesn't move the
+  // local HEAD it reads from, so nothing below this point can fail and
+  // cause a successful push to be reported as if it never happened.
+  assertSuccess(push, "git push");
+  return sha;
 }
