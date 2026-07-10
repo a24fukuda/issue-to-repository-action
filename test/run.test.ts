@@ -1,20 +1,29 @@
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import type { RunDependencies } from "../src/run";
 import { run } from "../src/run";
 import type { IssueRecord } from "../src/types";
 
-// @actions/core reads inputs from INPUT_<NAME> env vars and
-// @actions/github reads the repo from GITHUB_REPOSITORY — set these
+// @actions/core reads inputs from INPUT_<NAME> env vars, reads the repo
+// from GITHUB_REPOSITORY, and writes outputs by appending to the file at
+// GITHUB_OUTPUT (always set by the real Actions runner) — set these
 // directly rather than mocking the modules, so this test doesn't depend on
 // module-mock semantics (which apply process-wide in Bun's test runner and
 // would otherwise leak into other test files).
-const ENV_KEYS = ["INPUT_GITHUB-TOKEN", "GITHUB_REPOSITORY"];
+const ENV_KEYS = ["INPUT_GITHUB-TOKEN", "GITHUB_REPOSITORY", "GITHUB_OUTPUT"];
 const originalEnv: Record<string, string | undefined> = {};
+let outputFile: string;
 
 beforeEach(() => {
   for (const key of ENV_KEYS) originalEnv[key] = process.env[key];
   process.env["INPUT_GITHUB-TOKEN"] = "fake-token";
   process.env.GITHUB_REPOSITORY = "owner/repo";
+
+  outputFile = path.join(mkdtempSync(path.join(os.tmpdir(), "run-test-")), "outputs");
+  writeFileSync(outputFile, "");
+  process.env.GITHUB_OUTPUT = outputFile;
 });
 
 afterEach(() => {
@@ -39,6 +48,28 @@ function makeDeps(overrides: Partial<RunDependencies> = {}): RunDependencies {
     commitAndPush: async () => null,
     ...overrides,
   };
+}
+
+/**
+ * Parses the GITHUB_OUTPUT file's `key<<delimiter\nvalue\ndelimiter` format
+ * (what @actions/core's setOutput actually writes) into a plain object.
+ */
+function readOutputs(): Record<string, string> {
+  const lines = readFileSync(outputFile, "utf8").split("\n");
+  const values: Record<string, string> = {};
+  for (let i = 0; i < lines.length; i++) {
+    const match = /^(.+)<<(ghadelimiter_.+)$/.exec(lines[i]);
+    if (!match) continue;
+    const [, key, delimiter] = match;
+    const valueLines: string[] = [];
+    i++;
+    while (i < lines.length && lines[i] !== delimiter) {
+      valueLines.push(lines[i]);
+      i++;
+    }
+    values[key] = valueLines.join("\n");
+  }
+  return values;
 }
 
 describe("run", () => {
@@ -72,35 +103,9 @@ describe("run", () => {
 });
 
 describe("run output contract", () => {
-  // core.setOutput has no return value and no test-friendly way to read
-  // it back without mocking @actions/core itself (which risks the same
-  // cross-file leakage module-mocking the local collaborators avoids).
-  // Instead, spy on process.stdout.write, since core.setOutput ultimately
-  // writes a `::set-output` / GITHUB_OUTPUT-file workflow command through
-  // it when no GITHUB_OUTPUT file is configured.
-  let written: string[] = [];
-  let originalWrite: typeof process.stdout.write;
-
-  beforeEach(() => {
-    written = [];
-    originalWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = ((chunk: string) => {
-      written.push(String(chunk));
-      return true;
-    }) as typeof process.stdout.write;
-  });
-
-  afterEach(() => {
-    process.stdout.write = originalWrite;
-  });
-
-  function outputLines(): string {
-    return written.join("");
-  }
-
   it("sets changed=false (not left unset) when nothing changed", async () => {
     await run(makeDeps({ syncIssueFiles: async () => ({ written: [], deleted: [] }) }));
-    expect(outputLines()).toContain("changed::false");
+    expect(readOutputs().changed).toBe("false");
   });
 
   it("sets changed=true and commit-sha when a commit lands", async () => {
@@ -110,8 +115,9 @@ describe("run output contract", () => {
         commitAndPush: async () => "abc123",
       }),
     );
-    expect(outputLines()).toContain("changed::true");
-    expect(outputLines()).toContain("commit-sha::abc123");
+    const outputs = readOutputs();
+    expect(outputs.changed).toBe("true");
+    expect(outputs["commit-sha"]).toBe("abc123");
   });
 
   it("sets changed=false when commitAndPush finds nothing actually staged", async () => {
@@ -121,8 +127,9 @@ describe("run output contract", () => {
         commitAndPush: async () => null,
       }),
     );
-    expect(outputLines()).toContain("changed::false");
-    expect(outputLines()).not.toContain("commit-sha::");
+    const outputs = readOutputs();
+    expect(outputs.changed).toBe("false");
+    expect(outputs["commit-sha"]).toBeUndefined();
   });
 
   it("sets changed=false (not left unset) when commitAndPush throws", async () => {
@@ -137,8 +144,8 @@ describe("run output contract", () => {
         },
       }),
     );
-    expect(outputLines()).toContain("changed::false");
-    expect(outputLines()).toContain("::error::git push failed");
+    expect(readOutputs().changed).toBe("false");
+    expect(process.exitCode).toBe(1);
   });
 
   it("sets changed=false (not left unset) when fetching issues throws", async () => {
@@ -149,7 +156,7 @@ describe("run output contract", () => {
         },
       }),
     );
-    expect(outputLines()).toContain("changed::false");
-    expect(outputLines()).toContain("::error::API rate limit exceeded");
+    expect(readOutputs().changed).toBe("false");
+    expect(process.exitCode).toBe(1);
   });
 });
