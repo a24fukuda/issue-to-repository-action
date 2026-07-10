@@ -23,17 +23,17 @@ const defaultDependencies: RunDependencies = {
   setOutput: core.setOutput,
 };
 
-// Dependencies are injectable (rather than imported and called directly)
-// so tests can exercise the output-setting orchestration below without
-// mocking modules — module mocks apply process-wide in Bun's test runner
-// and leak across unrelated test files.
+// 依存関係はインポートして直接呼び出すのではなく注入可能にしている。
+// これにより、テストは以下の出力設定のオーケストレーションを、モジュールを
+// モックせずに検証できる — モジュールモックはBunのテストランナーでは
+// プロセス全体に適用され、無関係な他のテストファイルにも漏れ出してしまう。
 export async function run(deps: RunDependencies = defaultDependencies): Promise<void> {
-  // Tracks whether `changed` has already been reported so the catch block
-  // below never overwrites a true result: setOutput appends to the
-  // GITHUB_OUTPUT file, last-write-wins, so if `changed=true` is reported
-  // and a later statement (e.g. the commit-sha setOutput call) throws, the
-  // catch block must not report changed=false for a push that genuinely
-  // landed.
+  // `changed` が既に報告済みかどうかを追跡し、下のcatchブロックが
+  // trueの結果を上書きしないようにする: setOutputはGITHUB_OUTPUTファイルに
+  // 追記する方式で、最後に書き込んだ値が優先されるため、`changed=true` が
+  // 報告された後に別の文（例えばcommit-shaのsetOutput呼び出し）が例外を
+  // 投げた場合、catchブロックは実際にはpushが成功しているのに
+  // changed=falseを報告してはならない。
   let changedReported = false;
 
   try {
@@ -45,10 +45,9 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
       core.getInput("committer-email") ||
       "41898282+github-actions[bot]@users.noreply.github.com";
 
-    // Check this before any API calls: a checkout that can't be pushed to
-    // (e.g. detached HEAD) means the whole run is going to fail anyway, so
-    // there's no point spending the API/time budget on fetching and
-    // syncing first.
+    // API呼び出しの前にこれを確認する: pushできないチェックアウト状態
+    // （例えばdetached HEAD）の場合、どのみち実行全体が失敗するため、
+    // 先にfetchや同期にAPI/時間を費やす意味がない。
     const branch = await deps.getCurrentBranch();
 
     const { owner, repo } = github.context.repo;
@@ -69,9 +68,9 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
       return;
     }
 
-    // Only report `changed`/`commit-sha` once the commit has actually
-    // landed — setting them from the file diff alone would report a
-    // change even if the push below fails or turns out to be a no-op.
+    // コミットが実際に完了したときにのみ `changed`/`commit-sha` を
+    // 報告する — ファイル差分だけを基準にすると、下のpushが失敗したり
+    // 実質何もしなかった場合でも変更ありと報告してしまう。
     const sha = await deps.commitAndPush({
       dir: issuesDir,
       message: commitMessage,
@@ -91,15 +90,16 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
       changedReported = true;
     }
   } catch (error) {
-    // Report an explicit `changed=false` on failure — nothing was
-    // committed — rather than leaving the output unset. A caller reading
-    // `steps.<id>.outputs.changed` (e.g. via the reusable workflow's
-    // `jobs.sync.outputs`) would otherwise see an empty string rather than
-    // "false" when this action fails, which breaks strict `== 'true'` /
-    // `fromJSON(...)` checks downstream. Skipped if `changed` was already
-    // reported (a real push landed before a later step failed), and
-    // wrapped in its own try/catch so a broken output channel can't
-    // prevent setFailed from running below.
+    // 失敗時は出力を未設定のままにするのではなく、明示的に
+    // `changed=false` を報告する — 何もコミットされなかったということ。
+    // そうしないと、`steps.<id>.outputs.changed` を読み取る呼び出し元
+    // （例えば再利用可能なワークフローの `jobs.sync.outputs` 経由）は、
+    // このアクションが失敗したときに "false" ではなく空文字列を見ることに
+    // なり、下流の厳密な `== 'true'` / `fromJSON(...)` チェックが
+    // 壊れてしまう。`changed` が既に報告済みの場合（後続のステップが
+    // 失敗する前に実際のpushが成功していた場合）はスキップされ、
+    // 壊れた出力チャネルが下のsetFailedの実行を妨げないよう、独自の
+    // try/catchで囲んでいる。
     if (!changedReported) {
       try {
         deps.setOutput("changed", false);

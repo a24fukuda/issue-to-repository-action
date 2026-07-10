@@ -34,10 +34,10 @@ async function currentSha(): Promise<string> {
 }
 
 /**
- * Resolves the current branch name, or throws if the checkout is in
- * detached HEAD state. Cheap and side-effect-free, so callers should check
- * this before doing any expensive work (e.g. fetching from GitHub's API)
- * that would otherwise be wasted on a checkout that can never be pushed.
+ * 現在のブランチ名を解決する。チェックアウトがdetached HEAD状態の場合は
+ * 例外を投げる。低コストで副作用がないため、呼び出し元は決してpushできない
+ * チェックアウトに無駄な高コストの処理（GitHub APIへのfetchなど）を
+ * 費やす前にこれをチェックすべきである。
  */
 export async function getCurrentBranch(): Promise<string> {
   const branchCheck = await git(["symbolic-ref", "-q", "--short", "HEAD"]);
@@ -52,9 +52,9 @@ export async function getCurrentBranch(): Promise<string> {
 }
 
 /**
- * Stages the synced directory and, if it differs from HEAD, commits and
- * pushes it. Returns the new commit SHA, or null if there was nothing to
- * commit.
+ * 同期対象のディレクトリをステージし、HEADと差分があればコミットして
+ * pushする。新しいコミットのSHAを返す。コミットするものが何もなければ
+ * nullを返す。
  */
 export async function commitAndPush(
   options: CommitOptions & { branch: string },
@@ -76,9 +76,10 @@ export async function commitAndPush(
     return null;
   }
   if (diff.exitCode !== 1) {
-    // 0 = no staged differences, 1 = differences exist — anything else is a
-    // real git error (e.g. a corrupted index), not a "yes there's a diff"
-    // signal, and must not fall through to committing whatever is staged.
+    // 0 = ステージされた差分なし、1 = 差分あり — それ以外の終了コードは
+    // 「差分あり」のシグナルではなく実際のgitエラー（インデックス破損など）
+    // であり、そのままステージ済みの内容をコミットする処理に流れて
+    // はならない。
     assertSuccess(diff, "git diff --cached --quiet");
   }
 
@@ -87,16 +88,17 @@ export async function commitAndPush(
     "git commit",
   );
 
-  // A concurrency group (sync.yml/self-sync.yml) only serializes runs of
-  // this action against each other — it does nothing to stop an unrelated
-  // commit (a merged PR, another bot) landing on the same branch while
-  // this run was fetching from the GitHub API. Since our commit's tree is
-  // always this run's full regenerated snapshot of `options.dir` (not an
-  // incremental diff), a rejected push can be recovered by rebasing onto
-  // the new tip and retrying once — the rebase only needs to replay a
-  // change confined to `options.dir`, which nothing outside this action is
-  // expected to touch, so a genuine textual conflict here is a real
-  // anomaly worth surfacing, not something to retry further.
+  // `concurrency` グループ（sync.yml/self-sync.yml）は、このアクションの
+  // 実行同士を直列化するだけであり、このアクションがGitHub APIから
+  // fetchしている間に無関係なコミット（マージされたPR、他のボット）が
+  // 同じブランチに乗ることは防げない。このアクションのコミットのツリーは
+  // 常に `options.dir` を完全に再生成したこの実行のスナップショットで
+  // あり（差分ではない）、拒否されたpushは最新のtipにrebaseして1回だけ
+  // リトライすれば復旧できる — このrebaseは `options.dir` に限定された
+  // 変更を再適用するだけでよく、このアクション以外がそのディレクトリに
+  // 触れることは想定されていないため、ここで実際にテキスト競合が発生
+  // するのは報告に値する本物の異常事態であり、それ以上リトライすべき
+  // ものではない。
   let sha = await currentSha();
   let push = await git(["push"]);
   if (push.exitCode !== 0) {
@@ -116,9 +118,9 @@ export async function commitAndPush(
     push = await git(["push"]);
   }
 
-  // Assert last, with `sha` already captured: `git push` doesn't move the
-  // local HEAD it reads from, so nothing below this point can fail and
-  // cause a successful push to be reported as if it never happened.
+  // `sha` を既に取得した後で最後にアサートする: `git push` は参照元の
+  // ローカルHEADを動かさないため、これ以降の処理が失敗しても、成功した
+  // pushがなかったことにされることはない。
   assertSuccess(push, "git push");
   return sha;
 }

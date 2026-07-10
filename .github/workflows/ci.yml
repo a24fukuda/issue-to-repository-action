@@ -28,11 +28,12 @@ jobs:
             exit 1
           fi
 
-      # action.yml declares `runs.using: node20`, but Bun's bundler doesn't
-      # down-level syntax to a specific Node version the way esbuild's old
-      # --target=node20 did. `node --check` parses (without running)
-      # dist/index.js under real Node 20, so an incompatible syntax feature
-      # fails CI directly rather than only surfacing on a live run.
+      # action.ymlは `runs.using: node20` を宣言しているが、Bunの
+      # バンドラーは、esbuildの古い --target=node20 のように構文を
+      # 特定のNodeバージョン向けにダウンレベル変換することはない。
+      # `node --check` は実際のNode 20環境下でdist/index.jsを
+      # （実行せずに）パースするため、非互換な構文機能があれば、実際の
+      # 実行時にのみ表面化するのではなく、CIで直接失敗するようになる。
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

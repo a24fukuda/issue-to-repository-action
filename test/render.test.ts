@@ -3,9 +3,9 @@ import { issueFileName, renderIssueFile } from "../src/render";
 import type { IssueRecord } from "../src/types";
 import { makeIssue as makeBaseIssue } from "./fixtures";
 
-// Wraps the shared fixture with this file's own conventions (a populated
-// issue with labels/assignees/milestone) so the field list itself has one
-// source of truth, without giving up file-local defaults.
+// 共有フィクスチャをこのファイル独自の規約（ラベル/担当者/マイルストーンが
+// 設定されたIssue）でラップし、フィールドリスト自体は単一の情報源を
+// 保ちながら、このファイル固有のデフォルト値も維持している。
 function makeIssue(overrides: Partial<IssueRecord> = {}): IssueRecord {
   return makeBaseIssue({
     number: 42,

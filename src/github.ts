@@ -10,12 +10,12 @@ type Assignee = NonNullable<Issue["assignees"]>[number];
 type Comment =
   Endpoints["GET /repos/{owner}/{repo}/issues/{issue_number}/comments"]["response"]["data"][number];
 
-// Bounds how many issues' comment threads are fetched concurrently. Kept
-// modest (rather than e.g. 8+) because GitHub's secondary rate limit is
-// triggered by concurrent request volume — the throttling plugin on the
-// Octokit instance retries a rate-limited request, but each concurrent
-// request backs off independently, so a burst of many at once can retrigger
-// the same limit repeatedly instead of the batch settling down as a whole.
+// 同時に取得するIssueのコメントスレッド数の上限。8以上のような大きな値では
+// なく控えめにしている。GitHubのセカンダリレート制限は同時リクエスト数に
+// よってトリガーされるためである — Octokitインスタンスのthrottlingプラグインは
+// レート制限にかかったリクエストをリトライするが、それぞれの同時リクエストは
+// 独立してバックオフするため、一度に大量のリクエストを送るとバッチ全体が
+// 落ち着くのではなく、同じ制限に何度も引っかかってしまう。
 const COMMENT_FETCH_CONCURRENCY = 4;
 
 export async function fetchIssues(
@@ -30,13 +30,14 @@ export async function fetchIssues(
     per_page: 100,
   });
 
-  // The "list issues" endpoint also returns pull requests; skip those.
+  // "list issues" エンドポイントはプルリクエストも返すため、それらは除外する。
   const nonPrIssues = issues.filter((issue: Issue) => !issue.pull_request);
 
   return mapWithConcurrency(nonPrIssues, COMMENT_FETCH_CONCURRENCY, async (issue: Issue) => {
-    // The issue list response already carries the comment count; skip the
-    // extra request entirely for the (often large) share of issues with no
-    // comments at all instead of always fetching-then-discarding an empty page.
+    // Issue一覧のレスポンスには既にコメント数が含まれているため、常に
+    // 空のページをfetchしてから破棄するのではなく、コメントが全くない
+    // Issue（多くの場合かなりの割合を占める）については追加リクエスト
+    // 自体をスキップする。
     const comments = issue.comments > 0 ? await fetchComments(octokit, owner, repo, issue.number) : [];
 
     return {
