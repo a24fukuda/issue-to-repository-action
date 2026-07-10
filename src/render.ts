@@ -7,6 +7,15 @@ import type { IssueRecord } from "./types";
 // JSONペイロードからメタデータを読むため、見出しの書式には依存しない。
 export const COMMENTS_SECTION_MARKER = "<!-- issue-sync:comments -->";
 export const COMMENT_MARKER_PREFIX = "<!-- issue-sync:comment ";
+export const COMMENT_MARKER_SUFFIX = " -->";
+
+// マーカーに埋め込まれるJSONペイロードの形。書き込み側（下のcommentMarker）
+// と読み取り側（test/parse-helper.ts）で共有し、片側だけ変更されて静かに
+// 食い違うことを防ぐ。
+export interface CommentMarkerPayload {
+  author: string | null;
+  created_at: string;
+}
 
 export function issueFileName(issue: IssueRecord): string {
   return `${issue.number}.md`;
@@ -17,8 +26,11 @@ export function issueFileName(issue: IssueRecord): string {
 // （.gitattributes の text=auto 等）とレンダリング結果が毎回食い違って
 // 無駄な再書き込みが発生する。また下のquoteBlockは行単位で処理するため、
 // 正規化しないと `> foo\r` のような行が生まれてしまう。
+// \r\n だけでなく単独の \r も対象にする（/\r\n?/）: API経由で投稿された
+// 本文はCRのみの改行や \r\r\n のような列も含み得るため、\r\n だけを
+// 置換すると素の \r がレンダリング結果に残り、上記の問題がそのまま再発する。
 function normalizeNewlines(text: string): string {
-  return text.replace(/\r\n/g, "\n");
+  return text.replace(/\r\n?/g, "\n");
 }
 
 // コメント本文を1レベルの引用ブロックにする。引用ブロックはCommonMarkの
@@ -37,9 +49,15 @@ function quoteBlock(text: string): string {
 }
 
 function commentMarker(author: string | null, createdAt: string): string {
-  // author（GitHubのloginは英数字とハイフンのみ）と createdAt（ISO 8601）には
-  // HTMLコメントの終端 `-->` が現れ得ないため、JSONをそのまま埋め込める。
-  return `${COMMENT_MARKER_PREFIX}${JSON.stringify({ author, created_at: createdAt })} -->`;
+  // JSONをHTMLコメントに埋め込んで安全なのは、ペイロードに終端の `-->` が
+  // 現れない場合に限る。JSON.stringifyは引用符やバックスラッシュは
+  // エスケープするが `>` はしないため、本当の不変条件は「値に `>` が
+  // 含まれない」こと。author（GitHubのlogin — `github-actions[bot]` の
+  // ような角括弧入りのbotログインも含む）と createdAt（ISO 8601）は
+  // どちらも `>` を含み得ないのでこれを満たす。ペイロードにフィールドを
+  // 追加する場合は、その値も `>` を含み得ないか必ず確認すること。
+  const payload: CommentMarkerPayload = { author, created_at: createdAt };
+  return `${COMMENT_MARKER_PREFIX}${JSON.stringify(payload)}${COMMENT_MARKER_SUFFIX}`;
 }
 
 export function renderIssueFile(issue: IssueRecord): string {
