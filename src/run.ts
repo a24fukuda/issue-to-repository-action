@@ -1,3 +1,5 @@
+import { realpath } from "node:fs/promises";
+import path from "node:path";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { commitAndPush as defaultCommitAndPush, getCurrentBranch as defaultGetCurrentBranch } from "./git";
@@ -23,6 +25,77 @@ const defaultDependencies: RunDependencies = {
   setOutput: core.setOutput,
 };
 
+// `relative`（path.relativeの結果）が、基準ディレクトリ自体か、その外側を
+// 指しているかどうかを判定する。
+function escapesOrIsRoot(relative: string): boolean {
+  return relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+}
+
+/**
+ * `target` に到達可能な、実際に存在する最も深い祖先ディレクトリを
+ * シンボリックリンク解決込みで返す（`target` 自身が存在すればそれを、
+ * 存在しなければ存在する親を遡って探す）。`lexical` はそのディレクトリの
+ * シンボリックリンク解決前のパス、`real` は解決後のパス。
+ *
+ * `issues-dir` はこのアクションがこれから `mkdir` する典型的なケースでは
+ * まだ存在しないため、`fs.realpath(target)` を直接呼ぶだけでは不十分
+ * （ENOENTになる）であり、存在しない部分はシンボリックリンクではあり
+ * 得ないことを利用して、存在する祖先までの解決に留める。
+ */
+async function resolveExistingAncestor(target: string): Promise<{ lexical: string; real: string }> {
+  let lexical = target;
+  while (true) {
+    try {
+      return { lexical, real: await realpath(lexical) };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const parent = path.dirname(lexical);
+      if (parent === lexical) return { lexical, real: lexical };
+      lexical = parent;
+    }
+  }
+}
+
+/**
+ * `issues-dir` がチェックアウトのルート（カレントディレクトリ）配下の
+ * 真のサブディレクトリを指していることを検証する。検証しないと、
+ * `../outside` や絶対パスはチェックアウト外へのファイルの作成・削除を
+ * 実行してから `git add` が失敗するまで気づけず、`"."` は
+ * `git add -- <dir>` が作業ツリー全体（他のステップが残した無関係な
+ * 変更まで含む）をステージしてしまう。どちらも破壊的な副作用が起きる
+ * *前*に検出できるよう、他のどの処理よりも先にこれを呼び出す。
+ *
+ * レキシカルな検証（文字列としてのpath.resolve/path.relative）だけでは、
+ * `issues-dir` 自体（またはその祖先のパス構成要素）がチェックアウト外を
+ * 指すシンボリックリンクであるケースを見逃す — path.resolveはシンボリック
+ * リンクを辿らない文字列操作でしかないが、実際のファイルシステム操作
+ * （mkdir/readdir/writeFile/rm）はシンボリックリンクを辿るため、実在する
+ * パスをrealpathで解決し直して同じ包含チェックをもう一度行う。
+ */
+async function assertIssuesDirIsSafe(issuesDir: string): Promise<void> {
+  const resolved = path.resolve(issuesDir);
+  const cwd = process.cwd();
+
+  if (escapesOrIsRoot(path.relative(cwd, resolved))) {
+    throw new Error(
+      `issues-dir（"${issuesDir}"）はチェックアウトのルート自体か、その外側を指しています — ` +
+        "チェックアウト内の専用サブディレクトリを指定してください。",
+    );
+  }
+
+  const realCwd = await realpath(cwd);
+  const { lexical: ancestorLexical, real: ancestorReal } = await resolveExistingAncestor(resolved);
+  const remainder = path.relative(ancestorLexical, resolved);
+  const effectiveReal = path.join(ancestorReal, remainder);
+
+  if (escapesOrIsRoot(path.relative(realCwd, effectiveReal))) {
+    throw new Error(
+      `issues-dir（"${issuesDir}"）はシンボリックリンク経由でチェックアウトの外側を指しています — ` +
+        "チェックアウト内の専用サブディレクトリを指定してください。",
+    );
+  }
+}
+
 // 依存関係はインポートして直接呼び出すのではなく注入可能にしている。
 // これにより、テストは以下の出力設定のオーケストレーションを、モジュールを
 // モックせずに検証できる — モジュールモックはBunのテストランナーでは
@@ -44,6 +117,11 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
     const committerEmail =
       core.getInput("committer-email") ||
       "41898282+github-actions[bot]@users.noreply.github.com";
+
+    // 他のどの処理（APIやgit呼び出し）よりも先に検証する: 不正な
+    // issues-dirはファイルシステムへの破壊的な副作用を起こしてから
+    // 初めて失敗するのではなく、何もしないうちに拒否されるべきである。
+    await assertIssuesDirIsSafe(issuesDir);
 
     // API呼び出しの前にこれを確認する: pushできないチェックアウト状態
     // （例えばdetached HEAD）の場合、どのみち実行全体が失敗するため、

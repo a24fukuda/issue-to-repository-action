@@ -1,10 +1,27 @@
 name: Sync this repo's own issues
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "0 0 * * *"
   issues:
-    types: [opened, edited, closed, reopened, deleted]
+    types:
+      [
+        opened,
+        edited,
+        closed,
+        reopened,
+        deleted,
+        labeled,
+        unlabeled,
+        assigned,
+        unassigned,
+        milestoned,
+        demilestoned,
+      ]
+  issue_comment:
+    types: [created, edited, deleted]
 
 permissions:
   contents: write
@@ -19,6 +36,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # sync.ymlと同じ理由でブランチ名を明示する — concurrencyで
+          # 待機した実行が古いSHAをチェックアウトして自分自身の前回
+          # コミットと衝突するのを防ぐ。
+          ref: ${{ github.ref_name }}
 
       # 意図的に（利用者向けに「推奨」と文書化されている経路である
       # sync.ymlではなく）パッケージ化されたアクションを直接呼び出し、

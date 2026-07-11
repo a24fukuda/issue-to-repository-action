@@ -140,4 +140,62 @@ describe("commitAndPush (real git)", () => {
     expect(isRebaseInProgress(work)).toBe(false);
     expect(git(work, "status", "--porcelain=v1", "--branch").split("\n")[0]).toContain("main");
   });
+
+  it("does not persist committer identity into the checkout's local git config", async () => {
+    // 回帰テスト: 以前は `git config user.name/email` で恒久的に
+    // .git/configを書き換えていたため、no-op実行でも後続のワークフロー
+    // ステップがbotのidentityを誤って引き継いでしまっていた。
+    const { work, remote } = initRemoteAndClone(root);
+    writeFileSync(path.join(work, "issues", "2.md"), "new issue\n");
+
+    process.chdir(work);
+    await commitAndPush(COMMIT_OPTIONS);
+
+    // initRemoteAndCloneが設定した元のidentityのままであること。
+    expect(git(work, "config", "--local", "user.email").trim()).toBe("init@example.com");
+    expect(git(work, "config", "--local", "user.name").trim()).toBe("init");
+    // それでいて、実際のコミット自体はcommitter指定どおりのidentityで
+    // 作られていること（-cでの局所指定が機能していることの確認）。
+    expect(git(remote, "log", "-1", "--format=%an <%ae>", "main")).toContain(
+      "sync-bot <sync-bot@example.com>",
+    );
+  });
+
+  it("fails fast with the original push error, without attempting fetch/rebase, on a non-rejection push failure", async () => {
+    // 回帰テスト: 以前はpushが失敗すると原因を問わず即fetch+rebaseに入り、
+    // upstream未設定や認証エラーでも紛らわしい「git fetch に失敗しました」
+    // というエラーになっていた。ここではリモートURLを存在しないパスに
+    // 差し替えることで、拒否ではない（[rejected]を含まない）push失敗を
+    // 起こす。
+    const { work } = initRemoteAndClone(root);
+    writeFileSync(path.join(work, "issues", "2.md"), "new issue\n");
+    git(work, "remote", "set-url", "origin", path.join(root, "does-not-exist.git"));
+
+    process.chdir(work);
+    await expect(commitAndPush(COMMIT_OPTIONS)).rejects.toThrow(/^git push に失敗しました/);
+  });
+
+  it("throws a clear push error when the retried push after rebase is rejected again", async () => {
+    // 回帰テスト: 以前はこの経路（rebase成功後の再pushも失敗する場合）が
+    // 一切テストされておらず、最後の assertSuccess(push) が未カバーだった。
+    // ベアリモートに常にpushを拒否するpre-receiveフックを設置し、
+    // 「他の書き込み者による無関係なコミット」でまず1回目のpushを拒否させ、
+    // rebase成功後の2回目のpushもフックで拒否させる。
+    const { remote, work } = initRemoteAndClone(root);
+    const other = path.join(root, "other");
+    git(root, "clone", remote, other);
+    git(other, "config", "user.email", "other@example.com");
+    git(other, "config", "user.name", "other");
+    writeFileSync(path.join(other, "unrelated.md"), "from another writer\n");
+    git(other, "add", "unrelated.md");
+    git(other, "commit", "-m", "unrelated commit");
+    git(other, "push", "origin", "main");
+
+    const hookPath = path.join(remote, "hooks", "pre-receive");
+    writeFileSync(hookPath, "#!/bin/sh\necho 'rejected by hook' >&2\nexit 1\n", { mode: 0o755 });
+
+    writeFileSync(path.join(work, "issues", "2.md"), "new issue\n");
+    process.chdir(work);
+    await expect(commitAndPush(COMMIT_OPTIONS)).rejects.toThrow(/^git push に失敗しました/);
+  });
 });

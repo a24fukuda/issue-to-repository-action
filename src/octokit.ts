@@ -4,18 +4,20 @@ import { throttling } from "@octokit/plugin-throttling";
 import type { ThrottlingOptions } from "@octokit/plugin-throttling";
 import type { EndpointDefaults } from "@octokit/types";
 
-const MAX_RATE_LIMIT_RETRIES = 3;
+export const MAX_RATE_LIMIT_RETRIES = 3;
 
-function logAndRetry(
+export function logAndRetry(
   kind: string,
   retryAfter: number,
   options: Required<EndpointDefaults>,
   retryCount: number,
 ): boolean {
-  core.warning(
-    `${kind}に達しました: ${options.method} ${options.url}。${retryAfter}秒後にリトライします（${retryCount + 1}回目の試行）。`,
-  );
-  return retryCount < MAX_RATE_LIMIT_RETRIES;
+  const willRetry = retryCount < MAX_RATE_LIMIT_RETRIES;
+  const suffix = willRetry
+    ? `${retryAfter}秒後にリトライします（${retryCount + 1}回目の試行）。`
+    : `リトライ上限（${MAX_RATE_LIMIT_RETRIES}回）に達したため中断します。`;
+  core.warning(`${kind}に達しました: ${options.method} ${options.url}。${suffix}`);
+  return willRetry;
 }
 
 const throttle: ThrottlingOptions = {

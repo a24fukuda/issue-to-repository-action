@@ -5,6 +5,7 @@ function makeFakeOctokit(overrides: {
   issues: unknown[];
   commentsByIssue: Record<number, unknown[]>;
   onListComments?: (issueNumber: number) => void;
+  onListForRepo?: (params: Record<string, unknown>) => void;
 }) {
   return {
     rest: {
@@ -14,7 +15,10 @@ function makeFakeOctokit(overrides: {
       },
     },
     paginate: async (endpoint: unknown, params: Record<string, unknown>) => {
-      if (endpoint === "listForRepo-marker") return overrides.issues;
+      if (endpoint === "listForRepo-marker") {
+        overrides.onListForRepo?.(params);
+        return overrides.issues;
+      }
       if (endpoint === "listComments-marker") {
         overrides.onListComments?.(params.issue_number as number);
         return overrides.commentsByIssue[params.issue_number as number] ?? [];
@@ -72,6 +76,26 @@ describe("fetchIssues", () => {
     expect(records[0].comments).toEqual([
       { authorLogin: "carol", createdAt: "2026-01-03T00:00:00Z", body: "Confirmed." },
     ]);
+  });
+
+  it("requests all issue states, not just open ones", async () => {
+    // 回帰テスト: 偽octokitのpaginateはこれまでparamsを無視していたため、
+    // fetchIssuesから state: "all" を削除してもこのファイルのテストは
+    // グリーンのままだった。GitHub APIはデフォルトでopenのみを返すため、
+    // これを落とすとclosedなIssueが全て取得できなくなり、syncがそれらの
+    // ファイルを削除してしまう。
+    let capturedParams: Record<string, unknown> | undefined;
+    const octokit = makeFakeOctokit({
+      issues: [],
+      commentsByIssue: {},
+      onListForRepo: (params) => {
+        capturedParams = params;
+      },
+    });
+
+    await fetchIssues(octokit as never, "owner", "repo");
+
+    expect(capturedParams).toMatchObject({ state: "all", per_page: 100 });
   });
 
   it("excludes pull requests returned by the issues endpoint", async () => {
