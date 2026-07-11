@@ -53,7 +53,22 @@ Issueを同期したいリポジトリに以下を追加してください。安
 name: issue-sync
 on:
   issues:
-    types: [opened, edited, closed, reopened, deleted]
+    types:
+      [
+        opened,
+        edited,
+        closed,
+        reopened,
+        deleted,
+        labeled,
+        unlabeled,
+        assigned,
+        unassigned,
+        milestoned,
+        demilestoned,
+      ]
+  issue_comment:
+    types: [created, edited, deleted]
   schedule:
     - cron: "0 0 * * *"
 jobs:
@@ -69,6 +84,30 @@ jobs:
 実行し、`issues/` に変更があればコミットをプッシュします。また独自の
 `concurrency` グループを適用するため、Issueイベントと日次スケジュールが
 重なっても競合しません。
+
+`issues` トリガーの `types` にコメント以外の変更（ラベル・担当者・
+マイルストーン）も含め、`issue_comment` も別途トリガーとして追加している
+点に注意してください — `issues: edited` はタイトル・本文の編集のみに発火し、
+コメントの追加やラベル変更では発火しません。これらを省略すると、コメントや
+ラベルの変更が次の日次スケジュール実行（最大24時間後）まで反映されません。
+
+`secrets: inherit` はこのワークフローが宣言する `github-token` という
+シークレットを供給できない点に注意してください — GitHubのリポジトリ/組織
+シークレット名にはハイフンを含められないため、その名前のシークレットは
+そもそも保存できず、`inherit` は常に呼び出し元の既定の `GITHUB_TOKEN` に
+フォールバックします（多くの場合はそれで十分です）。独自のPersonal Access
+Tokenを使いたい場合は、`secrets: inherit` の代わりに明示的なマッピングを
+使ってください:
+
+```yaml
+    secrets:
+      github-token: ${{ secrets.MY_PAT }}
+```
+
+このアクションは通常のブランチのチェックアウト（`actions/checkout@v4` の
+既定の動作）を前提としています。`pull_request` イベントのようにdetached
+HEAD状態でチェックアウトされるトリガーでは、コミットをpushできないため
+即座に失敗します。
 
 ### 代替案: アクションを直接呼び出す
 
@@ -94,11 +133,16 @@ steps:
 
 | Input             | デフォルト                                              | 説明                                       |
 | ------------------|---------------------------------------------------------|--------------------------------------------|
-| `github-token`    | `${{ github.token }}`                                  | Issue/コメントの読み取りとコミットのプッシュに使うトークン |
+| `github-token`    | `${{ github.token }}`                                  | Issue/コメントの読み取りとコミットのプッシュに使うトークン（※） |
 | `issues-dir`      | `issues`                                                | Issueファイルの書き込み先ディレクトリ         |
 | `commit-message`  | `chore: sync issues`                                    | ファイルに変更があった場合のコミットメッセージ |
 | `committer-name`  | `github-actions[bot]`                                   | コミット作成者名                             |
 | `committer-email` | `41898282+github-actions[bot]@users.noreply.github.com` | コミット作成者のメールアドレス                |
+
+※ `github-token` を明示的に空文字列（未設定のシークレットを参照する式など）で
+渡した場合、action.ymlのデフォルトは適用されず、"Input required and not
+supplied" として即座に失敗します。デフォルトが適用されるのは、入力自体を
+省略した場合のみです。
 
 ## ファイル形式
 
@@ -154,6 +198,21 @@ GitHub上流で削除された（またはGitHubにより削除された）Issue
 `issues-dir` が完全に制御できないディレクトリを指している場合など）が
 誤って削除されることはありません。
 
+### 同期処理に関する既知の制限
+
+- **ページネーション中のIssueの削除／移譲**: Issue一覧はREST APIの
+  ページネーションで取得しており、単一の実行の取得中にIssueが削除・
+  移譲されるとページ境界がずれ、まれに実在する別のIssueが今回の取得結果に
+  含まれず、そのファイルが誤って削除されることがあります。次回の実行で
+  そのIssueが再取得できれば、ファイルは正しく復元されます（gitの履歴も
+  残るため恒久的なデータ損失にはなりません）。
+- **大文字小文字を区別しないファイルシステム**: macOS/Windowsランナーや
+  それらの上でのローカル実行では、`issues-dir` に偶然大文字小文字だけが
+  異なる同名の無関係なファイル（例: `7.MD`）が既に存在すると、そのファイルの
+  内容が黙って上書きされ得ます（Linux上のGitHub Actionsランナー
+  `ubuntu-latest` では、ファイルシステムが大文字小文字を区別するため
+  この問題は起こりません）。
+
 ## リリース手順
 
 `.github/workflows/sync.yml` は内部で
@@ -167,6 +226,15 @@ git tag -f v1
 git push origin v1.0.0
 git push -f origin v1
 ```
+
+利用者が「使い方」セクションの推奨どおり `sync.yml@vX.Y.Z` のように
+特定バージョンでワークフローYAML自体を固定していても、そのYAMLが内部で
+参照する `a24fukuda/issue-to-repository-action@v1` は可変タグのままです。
+つまり `vX.Y.Z` の固定は再利用可能なワークフローの*配線*（permissions/
+secrets/outputs）だけを固定するものであり、実際に実行されるアクションの
+コードは常に最新の `v1` に追従します。これは意図した動作（`v1` の
+パッチ更新を利用者が自動的に受け取れるようにするため）ですが、コード自体の
+不変性を期待している利用者には誤解を招く可能性があるため、明記しています。
 
 `dist/index.js` はコミットされており（`action.yml` の `runs.main` が実行する
 ファイルです）、CI（`.github/workflows/ci.yml`）は `src/` と内容が一致しない

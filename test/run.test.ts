@@ -14,14 +14,24 @@ import type { IssueRecord } from "../src/types";
 // ことで、このテストがモジュールモックのセマンティクス（Bunのテスト
 // ランナーではプロセス全体に適用され、他の無関係なテストファイルにも
 // 漏れ出してしまう）に依存しないようにしている。
-const ENV_KEYS = ["INPUT_GITHUB-TOKEN", "GITHUB_REPOSITORY", "GITHUB_OUTPUT"];
+const ENV_KEYS = [
+  "INPUT_GITHUB-TOKEN",
+  "INPUT_ISSUES-DIR",
+  "INPUT_COMMIT-MESSAGE",
+  "INPUT_COMMITTER-NAME",
+  "INPUT_COMMITTER-EMAIL",
+  "GITHUB_REPOSITORY",
+  "GITHUB_OUTPUT",
+];
 const originalEnv: Record<string, string | undefined> = {};
 let outputFile: string;
+let originalCwd: string;
 
 beforeEach(() => {
   for (const key of ENV_KEYS) originalEnv[key] = process.env[key];
   process.env["INPUT_GITHUB-TOKEN"] = "fake-token";
   process.env.GITHUB_REPOSITORY = "owner/repo";
+  originalCwd = process.cwd();
 
   outputFile = path.join(mkdtempSync(path.join(os.tmpdir(), "run-test-")), "outputs");
   writeFileSync(outputFile, "");
@@ -29,6 +39,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  process.chdir(originalCwd);
   for (const key of ENV_KEYS) {
     if (originalEnv[key] === undefined) delete process.env[key];
     else process.env[key] = originalEnv[key];
@@ -120,6 +131,101 @@ describe("run", () => {
       }),
     );
     expect(fetchIssuesCalled).toBe(false);
+  });
+
+  it("forwards issues-dir, committer fields, commit message, and branch to the injected dependencies", async () => {
+    // 回帰テスト: 依存関数への引数を一切アサートしていなかったため、
+    // 例えば issues-dir をハードコードしていてもテストがグリーンのまま
+    // だった。
+    process.env["INPUT_ISSUES-DIR"] = "custom-dir";
+    process.env["INPUT_COMMIT-MESSAGE"] = "custom message";
+    process.env["INPUT_COMMITTER-NAME"] = "custom-name";
+    process.env["INPUT_COMMITTER-EMAIL"] = "custom@example.com";
+
+    let syncDirArg: string | undefined;
+    let commitOptionsArg: unknown;
+    await run(
+      makeDeps({
+        getCurrentBranch: async () => "custom-branch",
+        syncIssueFiles: async (dir) => {
+          syncDirArg = dir;
+          return { written: ["1.md"], deleted: [] };
+        },
+        commitAndPush: async (options) => {
+          commitOptionsArg = options;
+          return "abc123";
+        },
+      }),
+    );
+
+    expect(syncDirArg).toBe("custom-dir");
+    expect(commitOptionsArg).toMatchObject({
+      dir: "custom-dir",
+      message: "custom message",
+      committerName: "custom-name",
+      committerEmail: "custom@example.com",
+      branch: "custom-branch",
+    });
+  });
+});
+
+describe("issues-dir validation", () => {
+  let tmpRoot: string;
+
+  beforeEach(() => {
+    tmpRoot = mkdtempSync(path.join(os.tmpdir(), "run-issues-dir-"));
+    process.chdir(tmpRoot);
+  });
+
+  it("rejects a path that escapes the checkout root, before checking the branch or fetching issues", async () => {
+    process.env["INPUT_ISSUES-DIR"] = "../outside";
+    let branchCheckCalled = false;
+    let fetchIssuesCalled = false;
+    await run(
+      makeDeps({
+        getCurrentBranch: async () => {
+          branchCheckCalled = true;
+          return "main";
+        },
+        fetchIssues: async () => {
+          fetchIssuesCalled = true;
+          return [];
+        },
+      }),
+    );
+    expect(branchCheckCalled).toBe(false);
+    expect(fetchIssuesCalled).toBe(false);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("rejects an absolute path outside the checkout root", async () => {
+    process.env["INPUT_ISSUES-DIR"] = path.join(os.tmpdir(), "somewhere-else");
+    await run(makeDeps());
+    expect(process.exitCode).toBe(1);
+    expect(readOutputs().changed).toBe("false");
+  });
+
+  it("rejects the checkout root itself ('.')", async () => {
+    // "." を許すと `git add -- .` が作業ツリー全体（他のステップが残した
+    // 無関係な変更まで含む）をステージしてしまう。
+    process.env["INPUT_ISSUES-DIR"] = ".";
+    await run(makeDeps());
+    expect(process.exitCode).toBe(1);
+    expect(readOutputs().changed).toBe("false");
+  });
+
+  it("accepts a normal relative subdirectory", async () => {
+    process.env["INPUT_ISSUES-DIR"] = "issues";
+    let fetchIssuesCalled = false;
+    await run(
+      makeDeps({
+        fetchIssues: async () => {
+          fetchIssuesCalled = true;
+          return [];
+        },
+      }),
+    );
+    expect(fetchIssuesCalled).toBe(true);
   });
 });
 

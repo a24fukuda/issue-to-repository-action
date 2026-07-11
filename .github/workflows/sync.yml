@@ -48,6 +48,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.github-token || github.token }}
+          # refをブランチ名で明示的に指定する: 省略した場合の既定は
+          # イベント発火時点で固定されたSHAをチェックアウトするため、
+          # concurrencyグループで待機してから開始した実行が、直前の
+          # sync実行が既にpushしたコミットより古いスナップショットを
+          # チェックアウトしてしまい、その後のrebaseリトライが自分自身の
+          # 前回コミットと本物のコンテンツ競合を起こして失敗し得る。
+          # ブランチ名を指定すると、実行開始時点のブランチ最新tipを取得する。
+          ref: ${{ github.ref_name }}
 
       - id: sync-issues
         uses: a24fukuda/issue-to-repository-action@v1

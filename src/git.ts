@@ -27,6 +27,17 @@ function assertSuccess(
   }
 }
 
+// pushが拒否（他のコミットが既にリモートに存在する）されたことを示す
+// gitの標準的な文言。これに一致しない失敗（認証エラー、ネットワーク断、
+// upstream未設定など）は、fetch+rebaseで復旧できるものではないため、
+// 無駄なfetch/rebase/pushサイクルを踏んでから紛らわしいエラーになる前に、
+// 元のpushエラーで即座に失敗させる。
+const PUSH_REJECTION_MARKERS = ["[rejected]", "non-fast-forward", "fetch first", "stale info"];
+
+function looksLikeRejectedPush(stderr: string): boolean {
+  return PUSH_REJECTION_MARKERS.some((marker) => stderr.includes(marker));
+}
+
 async function currentSha(): Promise<string> {
   const rev = await git(["rev-parse", "HEAD"]);
   assertSuccess(rev, "git rev-parse");
@@ -61,14 +72,6 @@ export async function commitAndPush(
 ): Promise<string | null> {
   const { branch } = options;
 
-  assertSuccess(
-    await git(["config", "user.name", options.committerName]),
-    "git config user.name",
-  );
-  assertSuccess(
-    await git(["config", "user.email", options.committerEmail]),
-    "git config user.email",
-  );
   assertSuccess(await git(["add", "--", options.dir]), "git add");
 
   const diff = await git(["diff", "--cached", "--quiet"]);
@@ -83,8 +86,21 @@ export async function commitAndPush(
     assertSuccess(diff, "git diff --cached --quiet");
   }
 
+  // committerのidentityは `git config` で永続的に設定するのではなく、
+  // `git commit` 呼び出しに `-c` で局所的に渡す。永続的な設定は
+  // no-op実行（差分なしで早期returnする実行）でもこのチェックアウトの
+  // .git/configを書き換えてしまい、同じジョブの後続ステップがコミットする
+  // 際にbotのidentityを誤って引き継ぐ原因になる。
   assertSuccess(
-    await git(["commit", "-m", options.message]),
+    await git([
+      "-c",
+      `user.name=${options.committerName}`,
+      "-c",
+      `user.email=${options.committerEmail}`,
+      "commit",
+      "-m",
+      options.message,
+    ]),
     "git commit",
   );
 
@@ -99,9 +115,22 @@ export async function commitAndPush(
   // 触れることは想定されていないため、ここで実際にテキスト競合が発生
   // するのは報告に値する本物の異常事態であり、それ以上リトライすべき
   // ものではない。
+  //
+  // `HEAD:<branch>` という明示的なrefspecを使う: bareの `git push` は
+  // upstreamトラッキングの設定に依存するため、（通常のチェックアウトでは
+  // 通常自動設定されるが）非標準的なチェックアウトでは上流未設定エラーに
+  // なり得る。明示的なrefspecなら上流設定の有無によらず動作する。
   let sha = await currentSha();
-  let push = await git(["push"]);
+  let push = await git(["push", "origin", `HEAD:${branch}`]);
   if (push.exitCode !== 0) {
+    if (!looksLikeRejectedPush(push.stderr)) {
+      // 拒否（他のコミットが既に存在する）以外の失敗 — 認証エラー、
+      // ネットワーク断、upstream未設定など — はfetch+rebaseでは復旧
+      // できない。無駄なfetch/rebase/pushを試みて元のエラーを失う前に、
+      // pushの本来のエラーで即座に失敗させる。
+      throw new Error(`git push に失敗しました（終了コード ${push.exitCode}）: ${push.stderr.trim()}`);
+    }
+
     assertSuccess(await git(["fetch", "origin", branch]), "git fetch");
     const rebase = await git(["rebase", `origin/${branch}`]);
     if (rebase.exitCode !== 0) {
@@ -115,7 +144,7 @@ export async function commitAndPush(
       );
     }
     sha = await currentSha();
-    push = await git(["push"]);
+    push = await git(["push", "origin", `HEAD:${branch}`]);
   }
 
   // `sha` を既に取得した後で最後にアサートする: `git push` は参照元の

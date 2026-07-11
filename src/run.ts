@@ -1,3 +1,4 @@
+import path from "node:path";
 import * as core from "@actions/core";
 import * as github from "@actions/github";
 import { commitAndPush as defaultCommitAndPush, getCurrentBranch as defaultGetCurrentBranch } from "./git";
@@ -23,6 +24,29 @@ const defaultDependencies: RunDependencies = {
   setOutput: core.setOutput,
 };
 
+/**
+ * `issues-dir` がチェックアウトのルート（カレントディレクトリ）配下の
+ * 真のサブディレクトリを指していることを検証する。検証しないと、
+ * `../outside` や絶対パスはチェックアウト外へのファイルの作成・削除を
+ * 実行してから `git add` が失敗するまで気づけず、`"."` は
+ * `git add -- <dir>` が作業ツリー全体（他のステップが残した無関係な
+ * 変更まで含む）をステージしてしまう。どちらも破壊的な副作用が起きる
+ * *前*に検出できるよう、他のどの処理よりも先にこれを呼び出す。
+ */
+function assertIssuesDirIsSafe(issuesDir: string): void {
+  const resolved = path.resolve(issuesDir);
+  const cwd = process.cwd();
+  const relative = path.relative(cwd, resolved);
+  const escapesOrIsRoot =
+    relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+  if (escapesOrIsRoot) {
+    throw new Error(
+      `issues-dir（"${issuesDir}"）はチェックアウトのルート自体か、その外側を指しています — ` +
+        "チェックアウト内の専用サブディレクトリを指定してください。",
+    );
+  }
+}
+
 // 依存関係はインポートして直接呼び出すのではなく注入可能にしている。
 // これにより、テストは以下の出力設定のオーケストレーションを、モジュールを
 // モックせずに検証できる — モジュールモックはBunのテストランナーでは
@@ -44,6 +68,11 @@ export async function run(deps: RunDependencies = defaultDependencies): Promise<
     const committerEmail =
       core.getInput("committer-email") ||
       "41898282+github-actions[bot]@users.noreply.github.com";
+
+    // 他のどの処理（APIやgit呼び出し）よりも先に検証する: 不正な
+    // issues-dirはファイルシステムへの破壊的な副作用を起こしてから
+    // 初めて失敗するのではなく、何もしないうちに拒否されるべきである。
+    assertIssuesDirIsSafe(issuesDir);
 
     // API呼び出しの前にこれを確認する: pushできないチェックアウト状態
     // （例えばdetached HEAD）の場合、どのみち実行全体が失敗するため、
