@@ -109,6 +109,21 @@ describe("syncIssueFiles", () => {
     expect(() => JSON.parse(manifestContent)).not.toThrow();
   });
 
+  it("does not follow a symlink to write the manifest through it, and leaves the link's target untouched", async () => {
+    // 回帰テスト: issueファイル向けの同種のガードは追加済みだったが、
+    // .manifest.json自体の書き込みには適用されておらず、同じ手口で
+    // リンク先を上書きされ得た。
+    const outsideDir = await mkdtemp(path.join(os.tmpdir(), "issue-sync-outside-"));
+    const targetPath = path.join(outsideDir, "precious.txt");
+    await writeFile(targetPath, "PRECIOUS UNRELATED CONTENT\n", "utf8");
+    await symlink(targetPath, path.join(dir, ".manifest.json"));
+
+    const result = await syncIssueFiles(dir, [makeIssue(1)]);
+
+    expect(result.written).toEqual(["1.md"]);
+    expect(await readFile(targetPath, "utf8")).toBe("PRECIOUS UNRELATED CONTENT\n");
+  });
+
   it("does not follow a symlink to write through it, and leaves the link's target untouched", async () => {
     // issues-dir に、たまたま <number>.md と同名のシンボリックリンクが
     // 既に存在する状況をシミュレートする。writeFileはリンクを辿るため、

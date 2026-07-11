@@ -13,15 +13,10 @@ export function logAndRetry(
   retryCount: number,
 ): boolean {
   const willRetry = retryCount < MAX_RATE_LIMIT_RETRIES;
-  if (willRetry) {
-    core.warning(
-      `${kind}に達しました: ${options.method} ${options.url}。${retryAfter}秒後にリトライします（${retryCount + 1}回目の試行）。`,
-    );
-  } else {
-    core.warning(
-      `${kind}に達しました: ${options.method} ${options.url}。リトライ上限（${MAX_RATE_LIMIT_RETRIES}回）に達したため中断します。`,
-    );
-  }
+  const suffix = willRetry
+    ? `${retryAfter}秒後にリトライします（${retryCount + 1}回目の試行）。`
+    : `リトライ上限（${MAX_RATE_LIMIT_RETRIES}回）に達したため中断します。`;
+  core.warning(`${kind}に達しました: ${options.method} ${options.url}。${suffix}`);
   return willRetry;
 }
 

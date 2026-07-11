@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import * as core from "@actions/core";
@@ -58,6 +59,16 @@ async function loadManifest(manifestPath: string): Promise<ManifestLoadResult> {
   return { owned: new Set(), needsRepair: true };
 }
 
+// シンボリックリンクやディレクトリなど、通常ファイルでないエントリが
+// 書き込み対象と同名で既に存在する場合、書き込みをブロックすべきかどうか
+// を判定する。writeFileはシンボリックリンクを辿って書き込むため、
+// 無条件に書き込むとリンク先（issues-dirの外かもしれない）を上書きして
+// しまう。「所有していないものには触れない」という設計方針に従い、
+// issueファイル・マニフェストファイルの両方の書き込み前にこれで確認する。
+function blocksWrite(entry: Dirent | undefined): boolean {
+  return entry !== undefined && !entry.isFile();
+}
+
 function setsEqual(a: Set<string>, b: Set<string>): boolean {
   if (a.size !== b.size) return false;
   for (const item of a) {
@@ -102,13 +113,7 @@ export async function syncIssueFiles(
   const written: string[] = [];
   const skippedForeignEntries: string[] = [];
   for (const [fileName, content] of desired) {
-    const entry = entryByName.get(fileName);
-    if (entry && !entry.isFile()) {
-      // シンボリックリンクやディレクトリなど、通常ファイルでないエントリが
-      // 同名で既に存在する。writeFileはシンボリックリンクを辿って書き込む
-      // ため、無条件に書き込むとリンク先（issues-dirの外かもしれない）を
-      // 上書きしてしまう。「所有していないものには触れない」という設計方針
-      // に従い、書き込みをスキップする。
+    if (blocksWrite(entryByName.get(fileName))) {
       skippedForeignEntries.push(fileName);
       continue;
     }
@@ -175,7 +180,15 @@ export async function syncIssueFiles(
   const manifestOwnershipToPersist = needsRepair
     ? new Set([...desiredFileNames, ...existingFiles])
     : desiredFileNames;
-  if (needsRepair || !setsEqual(previouslyOwned, manifestOwnershipToPersist)) {
+  if (blocksWrite(entryByName.get(MANIFEST_FILE_NAME))) {
+    // issueファイルと同じガード: マニフェストのファイル名がシンボリック
+    // リンクやディレクトリと衝突している場合、writeFileがリンクを辿って
+    // リンク先を上書きしてしまうのを防ぐ。所有権の追跡が更新されないため、
+    // 次回以降の実行でも同じ状況が続く可能性がある。
+    core.warning(
+      `${MANIFEST_FILE_NAME} がシンボリックリンクまたはディレクトリと衝突しているため、マニフェストの書き込みをスキップしました。`,
+    );
+  } else if (needsRepair || !setsEqual(previouslyOwned, manifestOwnershipToPersist)) {
     const manifestContent = `${JSON.stringify([...manifestOwnershipToPersist].sort(), null, 2)}\n`;
     await writeFile(manifestPath, manifestContent, "utf8");
     written.push(MANIFEST_FILE_NAME);

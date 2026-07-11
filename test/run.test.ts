@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as core from "@actions/core";
@@ -212,6 +212,27 @@ describe("issues-dir validation", () => {
     await run(makeDeps());
     expect(process.exitCode).toBe(1);
     expect(readOutputs().changed).toBe("false");
+  });
+
+  it("rejects issues-dir when it is a symlink pointing outside the checkout root", async () => {
+    // 回帰テスト: レキシカルな検証（path.resolve/path.relative）だけでは
+    // シンボリックリンクを辿らないため、issues-dir自体がチェックアウト外を
+    // 指すシンボリックリンクであるケースを見逃していた。
+    const outsideDir = mkdtempSync(path.join(os.tmpdir(), "run-issues-dir-outside-"));
+    symlinkSync(outsideDir, path.join(tmpRoot, "issues"));
+    process.env["INPUT_ISSUES-DIR"] = "issues";
+
+    let branchCheckCalled = false;
+    await run(
+      makeDeps({
+        getCurrentBranch: async () => {
+          branchCheckCalled = true;
+          return "main";
+        },
+      }),
+    );
+    expect(branchCheckCalled).toBe(false);
+    expect(process.exitCode).toBe(1);
   });
 
   it("accepts a normal relative subdirectory", async () => {
