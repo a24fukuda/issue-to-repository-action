@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { findActionRefs, readPackageVersion } from "../scripts/version-refs";
+import { findVersionRefs, readPackageVersion } from "../scripts/version-refs";
 
 // バージョンタグは複数のファイルに手書きで重複している（再利用可能
-// ワークフロー sync.yml の内部 `uses:`、README のコピペ用サンプル）。
+// ワークフロー sync.yml の内部 `uses:`、README のコピペ用サンプルと推奨タグ）。
 // GitHub Actions の `uses:` は式を使えないため、これらは静的な文字列
 // として実際のリリースタグに一致していなければならない。
 //
@@ -12,7 +12,7 @@ import { findActionRefs, readPackageVersion } from "../scripts/version-refs";
 // といったドリフトを、利用者へ出荷する前にPRで落とす。
 describe("バージョン参照の整合性", () => {
   const expected = readPackageVersion();
-  const refs = findActionRefs();
+  const refs = findVersionRefs();
 
   it("追跡対象ファイルに参照が最低1つは見つかる（正規表現が壊れて空振りしていないことの保証）", () => {
     // リネームや書式変更で正規表現がどの参照にもマッチしなくなると、
