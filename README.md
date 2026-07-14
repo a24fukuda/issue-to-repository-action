@@ -46,7 +46,7 @@ GitHubから独立して残ります。
 ### 推奨: 再利用可能なワークフロー
 
 Issueを同期したいリポジトリに以下を追加してください。安定性のため `@main` では
-なく `@v1`（または特定の `@vX.Y.Z` リリース）を指定することをお勧めします。
+なく `@v1.0.0`（特定のリリースタグ）を指定することをお勧めします。
 
 ```yaml
 # .github/workflows/issue-sync.yml
@@ -73,7 +73,7 @@ on:
     - cron: "0 0 * * *"
 jobs:
   sync:
-    uses: a24fukuda/issue-to-repository-action/.github/workflows/sync.yml@v1
+    uses: a24fukuda/issue-to-repository-action/.github/workflows/sync.yml@v1.0.0
     permissions:
       contents: write
       issues: read
@@ -120,7 +120,7 @@ permissions:
 
 steps:
   - uses: actions/checkout@v4
-  - uses: a24fukuda/issue-to-repository-action@v1
+  - uses: a24fukuda/issue-to-repository-action@v1.0.0
     with:
       issues-dir: issues
 ```
