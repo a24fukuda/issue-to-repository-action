@@ -46,9 +46,9 @@ jobs:
       # sync.ymlではなく）パッケージ化されたアクションを直接呼び出し、
       # 常に現在のコミットのdist/index.jsをドッグフーディングしている。
       # sync.ymlの自身のステップは内部で不変のリリース済みタグである
-      # `a24fukuda/issue-to-repository-action@v1` を固定して参照して
+      # `a24fukuda/issue-to-repository-action@v1.0.0` を固定して参照して
       # いるため、ここでそれを経由すると、(a) このコミットではなく
-      # 先週のリリースをテストすることになり、(b) v1が存在しない
+      # 固定されたリリースをテストすることになり、(b) v1.0.0が存在しない
       # うちは完全に失敗してしまう。つまり、sync.yml自体のYAML配線
       # （permissions/secrets/outputsの伝播）はこのワークフローでは
       # 検証されて**いない** — sync.ymlを編集した後は手動で確認すること。
