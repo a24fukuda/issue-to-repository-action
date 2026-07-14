@@ -215,17 +215,32 @@ GitHub上流で削除された（またはGitHubにより削除された）Issue
 
 ## リリース手順
 
-`.github/workflows/sync.yml` は内部で
-`a24fukuda/issue-to-repository-action@v1.0.0` を参照しているため、リリース
-ごとに不変のバージョンタグ（`vX.Y.Z`）を付けてください。可変のメジャータグ
-（`v1`）は使いません。新しいバージョンを切るときは、先に `sync.yml` 内部の
-参照を新しいタグ名（例: `@v1.1.0`）へ更新してコミットし、そのコミットに
-タグを付けます:
+バージョンは `package.json` の `version` フィールドを**唯一の真実**とし、
+`.github/workflows/sync.yml` の内部参照
+（`a24fukuda/issue-to-repository-action@vX.Y.Z`）や README のサンプルは
+すべてこの値に一致していなければなりません。GitHub Actions の `uses:` は式
+（`${{ ... }}`）を使えず静的な文字列しか書けないため、この一致はリリース
+のたびに手で合わせる必要があり、以前は複数箇所への手書き更新で取り残しが
+起きやすい構造でした。これを2つの仕組みで安全にしています。
+
+**リリーススクリプト（`bun run release`）** が、バージョンを1か所（コマンド
+引数）で受け取り、重複しているすべての箇所（`package.json` / `sync.yml` /
+README のサンプルと推奨タグ）を機械的に書き換え、その変更をコミットして
+不変タグ（`vX.Y.Z`）を作成します。可変のメジャータグ（`v1`）は使いません。
 
 ```sh
-git tag v1.0.0
-git push origin v1.0.0
+bun run release 1.1.0        # ファイルを書き換え、コミットし、タグ v1.1.0 を作成
+git push origin HEAD v1.1.0  # 内容を確認してから push（push だけは手動）
 ```
+
+`sync.yml` の内部参照が「バージョンを書き換えたコミット」そのものを指す
+不変タグに固定されるため、タグとコードは常に一致します。ファイル編集だけを
+行いたい場合は `bun run release <version> --no-git` を使ってください。
+
+**CI整合性チェック（`test/version-consistency.test.ts`、`bun test` で実行）**
+が、追跡対象ファイル内のすべてのバージョン参照が `package.json` の version に
+一致するかを検証し、不一致があればPRを落とします。手でバージョンを更新して
+一部を取り残した場合でも、利用者へ出荷する前に検出されます。
 
 利用者が「使い方」セクションの推奨どおり `sync.yml@vX.Y.Z` のように
 特定バージョンでワークフローYAMLを固定すると、そのYAMLが内部で参照する
