@@ -46,7 +46,9 @@ GitHubから独立して残ります。
 ### 推奨: 再利用可能なワークフロー
 
 Issueを同期したいリポジトリに以下を追加してください。安定性のため `@main` では
-なく `@v1.0.0`（特定のリリースタグ）を指定することをお勧めします。
+なく、特定のリリースタグ `@vX.Y.Z` にピン留めすることをお勧めします（利用可能な
+バージョンは [Releases](https://github.com/a24fukuda/issue-to-repository-action/releases)
+を参照）。以下の例の `vX.Y.Z` は実際のリリースタグに置き換えてください。
 
 ```yaml
 # .github/workflows/issue-sync.yml
@@ -73,7 +75,7 @@ on:
     - cron: "0 0 * * *"
 jobs:
   sync:
-    uses: a24fukuda/issue-to-repository-action/.github/workflows/sync.yml@v1.0.0
+    uses: a24fukuda/issue-to-repository-action/.github/workflows/sync.yml@vX.Y.Z
     permissions:
       contents: write
       issues: read
@@ -120,7 +122,7 @@ permissions:
 
 steps:
   - uses: actions/checkout@v4
-  - uses: a24fukuda/issue-to-repository-action@v1.0.0
+  - uses: a24fukuda/issue-to-repository-action@vX.Y.Z
     with:
       issues-dir: issues
 ```
@@ -215,18 +217,21 @@ GitHub上流で削除された（またはGitHubにより削除された）Issue
 
 ## リリース手順
 
-バージョンは `package.json` の `version` フィールドを**唯一の真実**とし、
+バージョンは `package.json` の `version` フィールドを**唯一の真実**とします。
+リリースタグと一致していなければならない参照は、実際に実行される
 `.github/workflows/sync.yml` の内部参照
-（`a24fukuda/issue-to-repository-action@vX.Y.Z`）や README のサンプルは
-すべてこの値に一致していなければなりません。GitHub Actions の `uses:` は式
-（`${{ ... }}`）を使えず静的な文字列しか書けないため、この一致はリリース
-のたびに手で合わせる必要があり、以前は複数箇所への手書き更新で取り残しが
-起きやすい構造でした。これを2つの仕組みで安全にしています。
+（`a24fukuda/issue-to-repository-action@vX.Y.Z`）**ただ1か所だけ**です
+（GitHub Actions の `uses:` は式 `${{ ... }}` を使えず静的な文字列しか
+書けないため、切るリリースタグに手で合わせる必要がある）。README の
+サンプルは意図的に `@vX.Y.Z` というプレースホルダにしてあり、現行版に
+同期する必要はありません — 利用者が自分でピン留めするバージョンを選ぶための
+例であって、このリポジトリの版と一致する制約は無いからです。これにより
+文書は陳腐化せず、同期すべき箇所を最小化しています。
 
 **リリーススクリプト（`bun run release`）** が、バージョンを1か所（コマンド
-引数）で受け取り、重複しているすべての箇所（`package.json` / `sync.yml` /
-README のサンプルと推奨タグ）を機械的に書き換え、その変更をコミットして
-不変タグ（`vX.Y.Z`）を作成します。可変のメジャータグ（`v1`）は使いません。
+引数）で受け取り、`package.json` とワークフローの内部参照を機械的に書き換え、
+その変更をコミットして不変タグ（`vX.Y.Z`）を作成します。可変のメジャータグ
+（`v1`）は使いません。
 
 ```sh
 bun run release 1.1.0        # ファイルを書き換え、コミットし、タグ v1.1.0 を作成
@@ -238,9 +243,9 @@ git push origin HEAD v1.1.0  # 内容を確認してから push（push だけは
 行いたい場合は `bun run release <version> --no-git` を使ってください。
 
 **CI整合性チェック（`test/version-consistency.test.ts`、`bun test` で実行）**
-が、追跡対象ファイル内のすべてのバージョン参照が `package.json` の version に
-一致するかを検証し、不一致があればPRを落とします。手でバージョンを更新して
-一部を取り残した場合でも、利用者へ出荷する前に検出されます。
+が、ワークフローの内部参照が `package.json` の version と一致するかを検証し、
+不一致があればPRを落とします。手でバージョンを更新して取り残した場合でも、
+利用者へ出荷する前に検出されます。
 
 利用者が「使い方」セクションの推奨どおり `sync.yml@vX.Y.Z` のように
 特定バージョンでワークフローYAMLを固定すると、そのYAMLが内部で参照する
@@ -259,7 +264,7 @@ git push origin HEAD v1.1.0  # 内容を確認してから push（push だけは
 プッシュのたびにドッグフーディングを行うため、`src/` の変更は継続的に
 検証されます。ただしこれは `.github/workflows/sync.yml` を検証するもの
 **ではありません** — その再利用可能なワークフローは内部でリリース済みの
-`@v1.0.0` タグを固定して参照しているため、self-sync経由でそれをテストすると
+`@vX.Y.Z` タグを固定して参照しているため、self-sync経由でそれをテストすると
 現在のコミットではなく固定されたリリースをテストすることになってしまいます。
 `sync.yml` 自体への変更（権限、secrets/outputs の配線）はこのリポジトリの
 どの自動化ワークフローでもカバーされていないため、手動でレビューし、
