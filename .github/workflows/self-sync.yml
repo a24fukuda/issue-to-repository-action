@@ -1,6 +1,7 @@
 name: Sync this repo's own issues
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   schedule:
