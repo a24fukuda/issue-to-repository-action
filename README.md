@@ -243,6 +243,17 @@ git push origin HEAD v1.1.0  # 内容を確認してから push（push だけは
 不変タグに固定されるため、タグとコードは常に一致します。ファイル編集だけを
 行いたい場合は `bun run release <version> --no-git` を使ってください。
 
+**GitHub Release の自動作成（`.github/workflows/release.yml`）。** 上の
+`git push origin HEAD vX.Y.Z` で不変タグを push すると、`release.yml` が
+そのタグに反応して発火し、同じタグに対する GitHub Release を
+`gh release create --generate-notes`（直前のリリース以降のコミット/PR から
+ノートを自動生成）で作成します。push が `release.ts` の残す唯一の手動操作
+なので、その push をそのままリリース作成のトリガーにしており、手動での
+「Draft a new release」は不要です。ワークフローには `contents: write` のみを
+付与しています（Release 作成に必要な最小権限で、既定の read-only トークンでは
+403 になるため）。タグは不変で通常1度しか push されませんが、ワークフローを
+再実行しても既存 Release を検出してスキップするため冪等です。
+
 **CI整合性チェック（`test/version-consistency.test.ts`、`bun test` で実行）**
 が、ワークフローの内部参照が `package.json` の version と一致するかを検証し、
 不一致があればPRを落とします。手でバージョンを更新して取り残した場合でも、
