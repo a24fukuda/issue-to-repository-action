@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc --noEmit && bun build ./src/main.ts --outfile=dist/index.js --target=node --format=cjs --minify",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "bun run scripts/release.ts"
   },
   "license": "MIT",
   "dependencies": {
