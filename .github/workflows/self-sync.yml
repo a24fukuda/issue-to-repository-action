@@ -1,10 +1,13 @@
 name: Sync this repo's own issues
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  schedule:
-    - cron: "0 0 * * *"
+  # 定期実行を有効化するには下の2行のコメントを外す
+  # （cron は UTC。"0 0 * * *" = 毎日、"0 0 * * 0" = 毎週日曜 0:00 UTC）
+  # schedule:
+  #   - cron: "0 0 * * *"
   issues:
     types:
       [

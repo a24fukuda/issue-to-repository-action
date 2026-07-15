@@ -54,6 +54,7 @@ Issueを同期したいリポジトリに以下を追加してください。安
 # .github/workflows/issue-sync.yml
 name: issue-sync
 on:
+  workflow_dispatch:
   issues:
     types:
       [
