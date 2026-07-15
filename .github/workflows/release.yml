@@ -21,11 +21,9 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      # gh release の --generate-notes は API 経由でタグ間の差分から
-      # ノートを生成するためチェックアウト自体は必須ではないが、
-      # 明示しておく（将来ノート生成にリポジトリ内容を使う余地を残す）。
-      - uses: actions/checkout@v4
-
+      # チェックアウトは不要: gh release create は --generate-notes（前タグ〜
+      # 今回タグの差分からノートをサーバー側生成）も --verify-tag も
+      # GitHub API 経由で完結し、ワーキングツリーを参照しないため。
       - name: Create GitHub Release
         env:
           # ubuntu-latest には gh CLI がプリインストールされている。
