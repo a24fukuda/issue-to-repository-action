@@ -1,0 +1,48 @@
+name: release
+
+# `release.ts` が作成した不変タグ（vX.Y.Z）を push したときに、その同じタグへ
+# GitHub Release を作成する。push は `release.ts` が意図的に手動へ残している
+# 唯一の外向き操作なので、その push をそのままリリース作成のトリガーにする。
+# これにより「タグを打つ = リリースが作られる」となり、手動での
+# 「Draft a new release」を不要にする。
+on:
+  push:
+    tags:
+      # release.ts が作るのは常に vX.Y.Z 形式の不変タグ。可変のメジャータグ
+      # （v1 等）は使わないため、その形だけにマッチさせる。
+      - "v*.*.*"
+
+# リリースの作成には contents: write が必要（既定の read-only トークンでは
+# 403 になる）。他の権限は不要なので最小に絞る。
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # gh release の --generate-notes は API 経由でタグ間の差分から
+      # ノートを生成するためチェックアウト自体は必須ではないが、
+      # 明示しておく（将来ノート生成にリポジトリ内容を使う余地を残す）。
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        env:
+          # ubuntu-latest には gh CLI がプリインストールされている。
+          # ジョブに付与した contents: write スコープのトークンを渡す。
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          # ワークフローの再実行など、既にリリースが存在する場合は冪等に
+          # 成功させる（gh release create は既存タグに対して失敗するため）。
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag は既に存在するためスキップします。"
+            exit 0
+          fi
+          # --verify-tag: トリガー元のタグが実在することを確認してから作成する。
+          # --generate-notes: 直前のリリース以降のコミット/PR からノートを自動生成。
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$tag" \
+            --verify-tag \
+            --generate-notes
