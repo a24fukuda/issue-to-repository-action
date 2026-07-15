@@ -27,4 +27,20 @@ describe("バージョン参照の整合性", () => {
     const detail = mismatches.map((ref) => `  ${ref.file}: ${ref.line} (期待: v${expected})`).join("\n");
     expect(mismatches, `package.json は v${expected} だが、以下が一致しない:\n${detail}`).toEqual([]);
   });
+
+  // 追跡すべき参照は2種類ある: (1) `uses:` のアクション／ワークフロー参照、
+  // (2) ドキュメント中の推奨タグ（バッククォート囲みの裸タグ）。上の「最低1件」
+  // チェックは総数しか見ないため、片方のパターンが壊れて0件になっても、もう
+  // 一方が残っていれば緑のまま通ってしまう。すると壊れた側の参照が黙って
+  // ドリフトし得る（(2) の検出漏れは実際に一度作り込んだ退行）。両カテゴリが
+  // それぞれ最低1件あることを明示的に要求し、どちらのパターンの退行も落とす。
+  it("uses: のアクション参照が追跡対象に含まれる", () => {
+    const actionRefs = refs.filter((ref) => /a24fukuda\/issue-to-repository-action(\/[^\s@]+)?@v\d+\.\d+\.\d+/.test(ref.line));
+    expect(actionRefs.length).toBeGreaterThan(0);
+  });
+
+  it("README の推奨タグ（バッククォート囲みの `@vX.Y.Z`）が追跡対象に含まれる", () => {
+    const backtickRefs = refs.filter((ref) => ref.file === "README.md" && /`@v\d+\.\d+\.\d+`/.test(ref.line));
+    expect(backtickRefs.length).toBeGreaterThan(0);
+  });
 });

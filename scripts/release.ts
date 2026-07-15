@@ -34,11 +34,22 @@ async function main(): Promise<void> {
     fail(`バージョンは X.Y.Z 形式で指定してください（先頭に v は付けない）: ${version}`);
   }
 
-  // 自分の変更だけをコミットするため、作業ツリーが汚れている場合は中断する。
+  const tag = `v${version}`;
+
+  // git を触る場合は、ファイルを1つでも書き換える"前"に前提条件をすべて
+  // 検証する。書き換えた後に中断すると、コミットされない変更が作業ツリーに
+  // 残り、次回実行が下の「汚れたツリー」ガードで弾かれて手動復旧が必要に
+  // なるため、副作用が出る前にここで弾く。
   if (!noGit) {
+    // 自分の変更だけをコミットするため、作業ツリーが汚れている場合は中断する。
     const status = (await $`git status --porcelain`.cwd(REPO_ROOT).text()).trim();
     if (status) {
       fail(`作業ツリーに未コミットの変更があります。先にコミットまたは退避してください:\n${status}`);
+    }
+    // 既存タグとの衝突も書き換え前に検出する（不変タグは上書きしない）。
+    const existingTag = (await $`git tag -l ${tag}`.cwd(REPO_ROOT).text()).trim();
+    if (existingTag) {
+      fail(`タグ ${tag} は既に存在します。別のバージョンを指定するか、既存タグを削除してください。`);
     }
   }
 
@@ -88,12 +99,7 @@ async function main(): Promise<void> {
 
   // 3. 「参照を書き換えたコミット」に不変タグを付ける。sync.yml の内部参照が
   //    そのコミット時点で v{version} を指しているため、タグとコードが一致する。
-  const tag = `v${version}`;
-  const existingTag = (await $`git tag -l ${tag}`.cwd(REPO_ROOT).text()).trim();
-  if (existingTag) {
-    fail(`タグ ${tag} は既に存在します。別のバージョンを指定するか、既存タグを削除してください。`);
-  }
-
+  //    タグ衝突は書き換え前に検証済みなので、ここでは作成のみ行う。
   await $`git add package.json ${trackedFiles()}`.cwd(REPO_ROOT);
   await $`git commit -m ${`chore: release ${tag}`}`.cwd(REPO_ROOT);
   await $`git tag ${tag}`.cwd(REPO_ROOT);
