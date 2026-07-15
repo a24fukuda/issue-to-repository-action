@@ -4,8 +4,15 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-  schedule:
-    - cron: "0 0 * * *"
+  # 日次スケジュールは無効化している。イベントトリガー（下の issues /
+  # issue_comment）が実際にイシューを触ったときだけ発火して issues/ を
+  # 最新化するため、このリポジトリの利用頻度では定期実行は不要と判断した。
+  # 取りこぼしの拾い直しや強制的な全再同期が必要になったときは、上の
+  # workflow_dispatch から手動実行できる。定期実行に戻したい場合は次の
+  # 2行のコメントを外す（cron は UTC。"0 0 * * *" = 毎日 / 週次にするなら
+  # 例えば "0 0 * * 0" = 毎週日曜 0:00 UTC）:
+  # schedule:
+  #   - cron: "0 0 * * *"
   issues:
     types:
       [
