@@ -58,7 +58,7 @@ jobs:
           ref: ${{ github.ref_name }}
 
       - id: sync-issues
-        uses: a24fukuda/issue-to-repository-action@v1.0.0
+        uses: a24fukuda/issue-to-repository-action@v1.1.0
         with:
           github-token: ${{ secrets.github-token || github.token }}
           issues-dir: ${{ inputs.issues-dir }}
